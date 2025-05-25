@@ -1,15 +1,14 @@
 import { createRouter, createWebHistory } from 'vue-router'
-import LoginView from '../views/LoginView.vue'
-import RegisterView from '../views/RegisterView.vue'
-import RecoverPasswordView from '../views/RecoverPasswordView.vue'
-import ResetPasswordView from '../views/ResetPasswordView.vue'
 
 const routes = [
-  { path: '/', redirect: '/login'},
-  { path: '/login', name: 'Login', component: LoginView },
-  { path: '/register', name: 'Register', component: RegisterView },
-  { path: '/recoverpassword', name: 'RecoverPassword', component: RecoverPasswordView },
-  { path: '/resetpassword',  name: 'ResetPassword',  component: ResetPasswordView}
+  { path: '/', redirect: '/login' },
+  { path: '/login', name: 'Login', component: () => import('@/views/LoginView.vue')},
+  { path: '/register', name: 'Register', component: () => import('@/views/RegisterView.vue')},
+  { path: '/recoverpassword', name: 'RecoverPassword', component: () => import('@/views/RecoverPasswordView.vue')},
+  { path: '/resetpassword', name: 'ResetPassword', component: () => import('@/views/ResetPasswordView.vue')},
+  { path: '/profile', name: 'Profile', component: () => import('@/views/ProfileView.vue')},
+  { path: '/editprofile', name: 'EditProfile', component: () => import('@/views/EditProfileView.vue')
+}
 ]
 
 const router = createRouter({
