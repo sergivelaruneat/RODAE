@@ -7,8 +7,9 @@ const routes = [
   { path: '/recoverpassword', name: 'RecoverPassword', component: () => import('@/views/RecoverPasswordView.vue')},
   { path: '/resetpassword', name: 'ResetPassword', component: () => import('@/views/ResetPasswordView.vue')},
   { path: '/profile', name: 'Profile', component: () => import('@/views/ProfileView.vue')},
-  { path: '/editprofile', name: 'EditProfile', component: () => import('@/views/EditProfileView.vue')
-}
+  { path: '/editprofile', name: 'EditProfile', component: () => import('@/views/EditProfileView.vue')},
+  { path: '/messages', name: 'Messages', component: () => import('@/views/MessagesView.vue') },
+  { path: '/chat', name: 'Chat', component: () => import('@/views/ChatView.vue')}
 ]
 
 const router = createRouter({
