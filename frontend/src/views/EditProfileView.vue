@@ -1,7 +1,6 @@
 <template>
   <div class="min-h-screen bg-gray-50">
     <Navbar />
-
     <div class="max-w-2xl mx-auto mt-10 p-6 bg-white rounded-lg shadow">
       <h2 class="text-xl font-semibold mb-6 text-center">Editar Perfil</h2>
 

@@ -9,7 +9,9 @@ const routes = [
   { path: '/profile', name: 'Profile', component: () => import('@/views/ProfileView.vue')},
   { path: '/editprofile', name: 'EditProfile', component: () => import('@/views/EditProfileView.vue')},
   { path: '/messages', name: 'Messages', component: () => import('@/views/MessagesView.vue') },
-  { path: '/chat', name: 'Chat', component: () => import('@/views/ChatView.vue')}
+  { path: '/chat', name: 'Chat', component: () => import('@/views/ChatView.vue')},
+  { path: '/publications', name: 'Publications', component: () => import('@/views/PublicationView.vue')},
+  { path: '/profile/:user', name: 'OtherProfile', component: () => import('@/views/OtherProfileView.vue')}
 ]
 
 const router = createRouter({
