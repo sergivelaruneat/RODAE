@@ -11,7 +11,12 @@ const routes = [
   { path: '/messages', name: 'Messages', component: () => import('@/views/MessagesView.vue') },
   { path: '/chat', name: 'Chat', component: () => import('@/views/ChatView.vue')},
   { path: '/publications', name: 'Publications', component: () => import('@/views/PublicationView.vue')},
-  { path: '/profile/:user', name: 'OtherProfile', component: () => import('@/views/OtherProfileView.vue')}
+  { path: '/profile/:user', name: 'OtherProfile', component: () => import('@/views/OtherProfileView.vue')},
+  { path: '/routines', name: 'Routines', component: () => import('@/views/RoutinesView.vue') },
+  { path: '/routine/:id', name: 'RoutineSelected', component: () => import('@/views/RoutineSelected.vue') },
+  { path: '/routine/create', name: 'RoutineCreate', component: () => import('@/views/RoutineCreateView.vue')},
+  { path: '/progress', name: 'Progress', component: () => import('@/views/ProgressView.vue') },
+  { path: '/report/:id', name: 'ReportView', component: () => import('@/views/ReportView.vue')},
 ]
 
 const router = createRouter({
