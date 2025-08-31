@@ -2,7 +2,6 @@
   <div class="flex flex-col items-center justify-center min-h-screen bg-white">
     <div class="w-full max-w-sm p-8 bg-white border border-gray-200 rounded-lg shadow-sm">
       <img src="/logoSF.png" alt="RODAE" class="w-40 mx-auto mb-6" />
-
       <form @submit.prevent="login" class="space-y-4">
         <input
           v-model="email"
@@ -28,7 +27,9 @@
       </form>
 
       <div class="mt-4 text-center">
-        <router-link to="/recoverpassword" class="text-sm text-blue-600 hover:underline">¿Has olvidado la contraseña?</router-link>
+        <router-link to="/recoverpassword" class="text-sm text-blue-600 hover:underline">
+          ¿Has olvidado la contraseña?
+        </router-link>
       </div>
     </div>
 
@@ -43,8 +44,10 @@
 
 <script setup>
 import { ref } from 'vue'
+import { useRouter } from 'vue-router'
 import axios from 'axios'
 
+const router = useRouter()
 const email = ref('')
 const password = ref('')
 const error = ref('')
@@ -52,15 +55,26 @@ const error = ref('')
 const login = async () => {
   error.value = ''
   try {
-    const res = await axios.post('http://127.0.0.1:8000/api/login', {
+    const { data } = await axios.post('/login', {
       email: email.value,
       password: password.value
     })
-    localStorage.setItem('token', res.data.token)
-    alert('Login correcto')
-    // router.push('/inicio')
+    // guardar token y user, y fijar Authorization
+    localStorage.setItem('token', data.token)
+    axios.defaults.headers.common['Authorization'] = `Bearer ${data.token}`
+    localStorage.setItem('user', JSON.stringify(data.user || {}))
+
+    // redirigir a publicaciones (feed)
+    router.push('/publications')
   } catch (e) {
-    error.value = 'Credenciales incorrectas'
+    const status = e?.response?.status
+    if (status === 403) {
+      error.value = 'Debes verificar tu correo antes de iniciar sesión.'
+    } else if (status === 401) {
+      error.value = 'Credenciales incorrectas'
+    } else {
+      error.value = 'Ha ocurrido un error. Inténtalo de nuevo.'
+    }
   }
 }
 </script>

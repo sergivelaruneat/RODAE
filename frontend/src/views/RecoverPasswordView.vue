@@ -32,13 +32,27 @@
 
 <script setup>
 import { ref } from 'vue'
+import axios from 'axios'
 
 const email = ref('')
 const mensaje = ref('')
+const error = ref('')
+const loading = ref(false)
 
-const recover = () => {
-  // Aquí solo mostramos un mensaje simulado
-  mensaje.value = 'Si el correo está registrado, recibirás instrucciones pronto.'
-  email.value = ''
+const recover = async () => {
+  mensaje.value = ''
+  error.value = ''
+  loading.value = true
+  try {
+    await axios.post('/password/forgot', { email: email.value })
+    // Respuesta siempre genérica por seguridad
+    mensaje.value = 'Si el correo está registrado, recibirás instrucciones pronto.'
+    email.value = ''
+  } catch (e) {
+    error.value = 'No se pudo enviar el correo de recuperación.'
+  } finally {
+    loading.value = false
+  }
 }
 </script>
+

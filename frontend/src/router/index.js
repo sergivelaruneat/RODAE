@@ -24,4 +24,11 @@ const router = createRouter({
   routes
 })
 
+router.beforeEach((to, from, next) => {
+  const privadas = ['/publications','/profile','/messages','/routines','/progress'] // ajusta
+  const token = localStorage.getItem('token')
+  if (privadas.includes(to.path) && !token) return next('/login')
+  next()
+})
+
 export default router
