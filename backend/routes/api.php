@@ -4,6 +4,8 @@ use Illuminate\Support\Facades\Route;
 use App\Http\Controllers\Api\AuthController;
 use App\Http\Controllers\Api\PasswordController;
 use App\Http\Controllers\Api\EmailVerificationController;
+use App\Http\Controllers\Api\PublicationController;
+use App\Http\Controllers\Api\CommentController;  
 use App\Models\User;
 
 // Auth
@@ -35,8 +37,34 @@ Route::middleware('auth:api')->group(function () {
     Route::post('/email/resend', [EmailVerificationController::class, 'resend'])
         ->middleware('throttle:6,1')
         ->name('verification.resend');
-    
+
+
+     // ====== Publications ======
+    // Feed (seguidos + yo)
+    Route::get('/publications/feed', [PublicationController::class, 'feed']);
+
+    // Listado por usuario (?user_id=...)
+    Route::get('/publications', [PublicationController::class, 'index']);
+
+    // Crear publicación
+    Route::post('/publications', [PublicationController::class, 'store'])
+        ->middleware('throttle:20,1');
+
+    // Borrar publicación (solo owner vía Policy)
+    Route::delete('/publications/{publication}', [PublicationController::class, 'destroy']);
+
+    // ====== Comments ======
+    // Listar comentarios de una publicación (paginado)
+    Route::get('/publications/{publication}/comments',  [CommentController::class, 'index']);
+
+    // Crear comentario en una publicación
+    Route::post('/publications/{publication}/comments', [CommentController::class, 'store'])
+        ->middleware('throttle:30,1');
+
+    // Borrar comentario propio
+    Route::delete('/comments/{comment}', [CommentController::class, 'destroy']);
 });
+
 // Reenviar verificación por email (sin auth) — solo si NO está verificado
 Route::post('/email/resend-public', [EmailVerificationController::class, 'resendPublic'])
     ->middleware('throttle:6,1');

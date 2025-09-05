@@ -7,6 +7,9 @@ use Illuminate\Auth\Notifications\ResetPassword;
 use Illuminate\Auth\Notifications\VerifyEmail;
 use Illuminate\Support\Facades\Gate;
 
+use App\Models\Publication;
+use App\Policies\PublicationPolicy;
+
 class AuthServiceProvider extends ServiceProvider
 {
     /**
@@ -14,9 +17,7 @@ class AuthServiceProvider extends ServiceProvider
      *
      * @var array<class-string, class-string>
      */
-    protected $policies = [
-        // 'App\Models\Model' => 'App\Policies\ModelPolicy',
-    ];
+    protected $policies = [ \App\Models\Publication::class => \App\Policies\PublicationPolicy::class ];
 
     /**
      * Register any authentication / authorization services.
@@ -31,11 +32,6 @@ class AuthServiceProvider extends ServiceProvider
             $email = urlencode($user->email);
             return "{$front}/resetpassword?token={$token}&email={$email}";
         });
-
-        // (Opcional) Personalizar verificación de email → frontend
-        // VerifyEmail::createUrlUsing(function ($notifiable) {
-        //     return config('app.frontend_url').'/login?verified=1';
-        // });
     }
 }
 
