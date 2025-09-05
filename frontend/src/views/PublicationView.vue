@@ -103,8 +103,33 @@ const abrirModal = (post) => {
   modalVisible.value = true
 }
 
+// redirección al perfil correcto
+// helper: saca tu id (primero de localStorage.user, si no del JWT)
+function getMyId () {
+  // 1) localStorage user
+  try {
+    const u = JSON.parse(localStorage.getItem('user') || 'null')
+    if (u?.id) return Number(u.id)
+  } catch {}
+
+  // 2) JWT
+  try {
+    const t = localStorage.getItem('token')
+    if (!t) return null
+    const payload = JSON.parse(atob(t.split('.')[1]))
+    const raw = payload.sub ?? payload.id ?? payload.user_id ?? null
+    return raw != null ? Number(raw) : null
+  } catch {
+    return null
+  }
+}
+
+// redirección al perfil correcto
 const irAlPerfil = (usuario) => {
-  router.push(`/profile/${usuario}`)
+  const uid = Number(usuario?.id)    // <-- fuerza a número
+  if (!uid) return
+  const me = getMyId()               // <-- también número
+  router.push(me && uid === me ? '/profile' : `/profile/${uid}`)
 }
 
 const handleDeleted = (id) => {
@@ -139,6 +164,10 @@ function mapPublicationFromApi(p) {
   const lower = url.toLowerCase()
   const isVideo = lower.endsWith('.mp4') || lower.endsWith('.webm') || lower.endsWith('.mov')
 
+  // deporte mostrado en el banner: prioriza el del PERFIL del autor
+  const deportePerfil = p?.user?.sport
+  const deportes = deportePerfil ? [deportePerfil] : (p.sport ? [p.sport] : [])
+
   return {
     id: p.id,
     tipo: isVideo ? 'video' : 'imagen',
@@ -146,14 +175,26 @@ function mapPublicationFromApi(p) {
     titulo: p.title ?? (p.content?.slice(0, 40) || ''),
     descripcion: p.content || '',
     fecha: p.created_at ? new Date(p.created_at).toLocaleDateString() : '',
-    deporte: p.sport ? [p.sport] : [],
+    deporte: deportes,
     comentarios: [],
-    nombreUsuario: p.user?.name ?? 'Usuario',
-    usuario: p.user?.username ?? '',
-    fotoPerfil: p.user?.avatar_url ?? '/perfilUsuario.jpg',
+
+    // ===== Banner superior (tu template ya usa estas claves) =====
+    usuario: {
+      id: p.user?.id ?? null,
+      name: p.user?.name ?? 'Usuario',
+      username: p.user?.username ?? '',
+      avatarUrl: p.user?.avatar_url ?? '',  // si falla la imagen, tu template ya la vacía en @error
+      sport: deportePerfil || '',           // por si lo necesitas en otras partes
+    },
+
+    // extra por si los usas en modal o acciones
+    user_id: p.user?.id ?? null,
+    created_at: p.created_at,
+    comments_count: p.comments_count ?? 0,
   }
 }
 
+//Datos de prueba
 ////////////////////////////
 // const publicaciones = ref([
 //   {

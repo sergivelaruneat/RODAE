@@ -173,13 +173,11 @@ watch(
 
 /** Owner: compatible con mock y con recurso del backend */
 const isOwner = computed(() => {
-  const cu = props.currentUser
-  const p = props.post
-  if (!cu || !p) return false
-  if (p.user?.id && cu.id) return p.user.id === cu.id
-  if (p.user?.username && cu.username) return p.user.username === cu.username
-  if (p.usuario && cu.username) return p.usuario === cu.username
-  return false
+  // Simplificamos la lógica para que solo compare IDs
+  const currentUserId = props.currentUser?.id
+  const postUserId = props.post?.user_id || props.post?.user?.id
+  
+  return currentUserId && postUserId && currentUserId === postUserId
 })
 
 function resetComments() {

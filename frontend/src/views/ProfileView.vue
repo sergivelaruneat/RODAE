@@ -17,7 +17,8 @@
         <!-- Cabecera -->
         <div class="flex items-center space-x-6">
           <img
-            src="/perfilUsuario.jpg"
+            :src="perfil?.avatarUrl || '/avatars/default.svg'"
+            :key="perfil?.avatarUrl"         
             alt="Foto de perfil"
             class="w-28 h-28 rounded-full object-cover cursor-pointer"
             @click="ampliarFoto = true"
@@ -42,11 +43,21 @@
             </div>
             <p class="text-gray-600">{{ correo }}</p>
             <p class="text-sm text-gray-500 mt-1">Edad: {{ edad }}</p>
-            <p class="text-sm text-gray-500">Deporte principal: {{ deporte }}</p>
-            <span class="inline-block bg-purple-200 text-purple-800 text-xs px-3 py-1 rounded-full mt-1">
-              {{ rol }}
+            <p class="text-sm text-gray-500">
+              Deporte principal:
+              <span v-if="deporte">{{ deporte }}</span>
+              <span v-else class="italic text-gray-400">No definido</span>
+            </p>
+            <span
+              class="inline-block text-xs px-3 py-1 rounded-full mt-1"
+              :class="rol === 'trainer'
+                ? 'bg-purple-200 text-purple-800'
+                : 'bg-blue-200 text-blue-800'"
+            >
+              {{ rol === 'trainer' ? 'Entrenador' : 'Atleta' }}
             </span>
-            <p class="mt-2 text-gray-700">{{ descripcion }}</p>
+            <p class="mt-2 text-gray-700" v-if="descripcion">{{ descripcion }}</p>
+            <p class="mt-2 text-gray-400 italic" v-else>Sin descripción</p>
           </div>
         </div>
 
@@ -70,10 +81,19 @@
 
         <!-- Contenido -->
         <div class="mt-6 max-h-[650px] overflow-y-auto">
-          <PublicationFeed v-if="tabActiva === 'publicaciones'" :posts="publicaciones" />
-          <div v-else class="text-center text-sm text-gray-500">
-            Aquí irán las rutinas del usuario.
-          </div>
+          <div v-if="cargando" class="text-sm text-gray-500">Cargando…</div>
+
+          <template v-else>
+            <PublicationFeed
+              v-if="tabActiva === 'publicaciones'"
+             :posts="publicaciones"
+             :current-user="currentUser"
+             @deleted="onPostDeleted"
+            />
+            <div v-else class="text-center text-sm text-gray-500">
+              Aquí irán las rutinas del usuario.
+            </div>
+          </template>
         </div>
       </div>
     </div>
@@ -90,11 +110,11 @@
         >
           ×
         </button>
-        <img src="/perfilUsuario.jpg" class="max-h-[80vh] max-w-full object-contain rounded-lg" />
+        <img :src="avatarUrl" class="max-h-[80vh] max-w-full object-contain rounded-lg" />
       </div>
     </div>
 
-    <!-- Modal seguidos -->
+    <!-- Modal seguidos (placeholder hasta implementar follows) -->
     <div
       v-if="mostrarSeguidos"
       class="fixed inset-0 backdrop-blur-sm bg-gray-800/20 flex items-center justify-center z-50"
@@ -104,24 +124,7 @@
           <h3 class="text-lg font-bold">Usuarios seguidos</h3>
           <button @click="mostrarSeguidos = false" class="text-xl font-bold hover:text-red-500">×</button>
         </div>
-        <div
-          v-for="user in seguidos"
-          :key="user.usuario"
-          @click="irAlPerfil(user.usuario)"
-          class="flex items-center gap-4 p-2 hover:bg-gray-100 cursor-pointer rounded"
-        >
-          <img :src="user.foto" class="w-12 h-12 rounded-full object-cover" />
-          <div>
-            <p class="font-semibold">{{ user.nombre }}</p>
-            <p class="text-sm text-gray-500">{{ user.correo }}</p>
-            <span
-              :class="user.rol === 'Entrenador' ? 'bg-purple-200 text-purple-800' : 'bg-blue-200 text-blue-800'"
-              class="text-xs px-2 py-1 rounded-full"
-            >
-              {{ user.rol }}
-            </span>
-          </div>
-        </div>
+        <p class="text-sm text-gray-500">Próximamente: aquí verás el listado de seguidos.</p>
       </div>
     </div>
 
@@ -134,133 +137,122 @@
 </template>
 
 <script setup>
-import { ref } from 'vue'
+import { ref, computed, onMounted } from 'vue'
 import { useRouter } from 'vue-router'
 import Navbar from '@/components/Navbar.vue'
 import PublicationFeed from '@/components/PublicationFeed.vue'
 import AddPublicationForm from '@/components/AddPublicationForm.vue'
+import { getMyProfile, getUserPublications } from '@/services/profileService'
+
+const currentUser = ref(JSON.parse(localStorage.getItem('user') || 'null'))
 
 const router = useRouter()
 
-const nombre = 'Sergio Velarde Álvarez'
-const correo = 'sergio@example.com'
-const edad = 26
-const deporte = 'Powerlifting'
-const descripcion = 'Mi vida se basa en estar entrenando o lesionado.'
-const rol = 'Entrenador'
-
+// estado UI
 const ampliarFoto = ref(false)
 const tabActiva = ref('publicaciones')
 const mostrarFormulario = ref(false)
-
 const mostrarSeguidos = ref(false)
+const cargando = ref(true)
 
-const seguidos = ref([
-  {
-    nombre: 'Elena Serna',
-    usuario: 'elenaserna80',
-    correo: 'elena@example.com',
-    rol: 'Atleta',
-    foto: '/elenaPerfil.PNG'
-  },
-  {
-    nombre: 'David Conde',
-    usuario: 'dconde97',
-    correo: 'david@example.com',
-    rol: 'Entrenador',
-    foto: '/davidPerfil.PNG'
-  },
-  {
-    nombre: 'Clara',
-    usuario: 'clara_fit',
-    correo: 'clara@example.com',
-    rol: 'Atleta',
-    foto: '/claraPerfil.PNG'
+// perfil (dinámico)
+const perfil = ref(null)
+
+const nombre = computed(() => perfil.value?.name ?? '')
+const correo = computed(() => perfil.value?.email ?? '')
+const edad = computed(() => perfil.value?.age ?? '—')
+const deporte = computed(() => perfil.value?.sport ?? '')
+const descripcion = computed(() => perfil.value?.bio ?? '')
+const rol = computed(() => perfil.value?.role ?? 'athlete')
+const avatarUrl = computed(() => perfil.value?.avatarUrl || placeholderAvatar)
+
+const placeholderAvatar =
+  'data:image/svg+xml;utf8,' +
+  encodeURIComponent(`<svg xmlns="http://www.w3.org/2000/svg" width="160" height="160"><rect width="100%" height="100%" fill="#f1f5f9"/><text x="50%" y="50%" dominant-baseline="middle" text-anchor="middle" fill="#94a3b8" font-family="Arial" font-size="14">Sin avatar</text></svg>`)
+
+// publicaciones (dinámicas)
+const publicaciones = ref([])
+
+onMounted(async () => {
+  try {
+    cargando.value = true
+    // 1) Perfil propio
+    const p = await getMyProfile() // <- devuelve el objeto “desenvuelto”
+    perfil.value = p
+
+    // 2) Publicaciones del usuario en el formato que espera PublicationFeed
+    await cargarPublicaciones(p.id)
+  } catch (e) {
+    console.error('Error cargando perfil o publicaciones', e)
+  } finally {
+    cargando.value = false
   }
-])
+})
 
-const irAlPerfil = (usuario) => {
-  router.push(`/profile/${usuario}`)
+async function cargarPublicaciones (userId, page = 1) {
+  const resp = await getUserPublications(userId, page)
+
+  // Tu endpoint suele devolver { data: [...], meta: {...} }
+  const items = Array.isArray(resp?.data) ? resp.data : (Array.isArray(resp) ? resp : [])
+
+  publicaciones.value = items.map(mapToFeedItem)
 }
 
-const publicaciones = ref([
-  {
-    id: 1,
-    tipo: 'imagen',
-    archivos: ['/publicacion1.jpg', '/publicacion2.jpg'],
-    nombre: 'Entrenando en casa',
-    descripcion: 'Sesión de fuerza completa',
-    fecha: '2025-05-20',
-    deporte: ['Powerlifting'],
-    comentarios: []
-  },
-  {
-    id: 2,
-    tipo: 'video',
-    archivos: ['/videodominadas.mp4'],
-    nombre: 'Dominadas explosivas',
-    descripcion: 'Nuevo récord personal',
-    fecha: '2025-05-19',
-    deporte: ['CrossFit'],
-    comentarios: []
-  },
-  {
-    id: 3,
-    tipo: 'video',
-    archivos: ['/videopesomuerto.mp4'],
-    nombre: 'Peso muerto top',
-    descripcion: 'Entreno del viernes',
-    fecha: '2025-05-18',
-    deporte: ['Powerlifting'],
-    comentarios: []
-  },
-  {
-    id: 4,
-    tipo: 'imagen',
-    archivos: ['/pesomuertofoto.jpg'],
-    nombre: 'Posando con barra',
-    descripcion: 'Después del levantamiento 💪',
-    fecha: '2025-05-17',
-    deporte: ['Bodybuilding'],
-    comentarios: []
-  },
-  {
-    id: 5,
-    tipo: 'imagen',
-    archivos: ['/fotoespejo.jpeg'],
-    nombre: 'Espejito mágico',
-    descripcion: 'Check de progreso',
-    fecha: '2025-05-16',
-    deporte: ['Fitness'],
-    comentarios: []
-  },
-  {
-    id: 6,
-    tipo: 'imagen',
-    archivos: ['/publicacion2.jpg'],
-    nombre: 'Cardio outdoors',
-    descripcion: 'Sesión de senderismo',
-    fecha: '2025-05-15',
-    deporte: ['Senderismo'],
-    comentarios: []
+/**
+ * Mapea la publicación de API al formato que usa PublicationFeed
+ * Formato esperado por tu feed “quemado”:
+ *  {
+ *    id, tipo: 'imagen' | 'video',
+ *    archivos: [urls...], nombre, descripcion, fecha(YYYY-MM-DD), deporte: [..],
+ *    comentarios: []
+ *  }
+ */
+function mapToFeedItem (apiItem) {
+  const mediaUrl =
+    apiItem.media_url || apiItem.image_url || apiItem.mediaUrl || apiItem.url || null
+  const isVideo =
+    (apiItem.media_type && apiItem.media_type === 'video') ||
+    /\.mp4$|\.webm$|\.ogg$/i.test(mediaUrl || '')
+    const ownerId = apiItem.user?.id ?? apiItem.user_id ?? perfil.value?.id ?? null
+
+  return {
+    id: apiItem.id,
+    tipo: isVideo ? 'video' : 'imagen',
+    archivos: mediaUrl ? [mediaUrl] : [],
+    nombre: apiItem.title ?? apiItem.titulo ?? 'Publicación',
+    descripcion: apiItem.content ?? apiItem.contenido ?? '',
+    fecha: (apiItem.created_at || apiItem.fecha || '').slice(0, 10),
+    deporte: apiItem.sport ? [apiItem.sport] : [],
+    comentarios: Array.isArray(apiItem.comments) ? apiItem.comments : [],
+    user_id: ownerId,
+    usuario: {
+      id: ownerId,
+      name: apiItem.user?.name ?? perfil.value?.name ?? 'Usuario',
+      username: apiItem.user?.username ?? perfil.value?.username ?? '',
+      avatarUrl: apiItem.user?.avatar_url ?? perfil.value?.avatarUrl ?? '',
+      sport: apiItem.user?.sport ?? perfil.value?.sport ?? ''
+   }
   }
-])
-
-
-const anadirPublicacion = (nueva) => {
-  publicaciones.value.unshift({
-    ...nueva,
-    id: publicaciones.value.length + 1,
-    tipo: nueva.archivos[0]?.type.includes('video') ? 'video' : 'imagen',
-    nombreUsuario: nombre,
-    usuario: 'servar99',
-    fotoPerfil: '/perfilUsuario.jpg',
-    comentarios: [],
-    deporte: [nueva.deporte]
-  })
 }
+
+// Al publicar desde el modal, refrescamos el feed
+const anadirPublicacion = async (_nueva) => {
+  try {
+    mostrarFormulario.value = false
+    if (perfil.value?.id) {
+      await cargarPublicaciones(perfil.value.id, 1)
+    }
+  } catch (e) {
+    console.error('No se pudo refrescar el feed tras publicar', e)
+  }
+}
+
 
 const goToEditProfile = () => {
   router.push('/editprofile')
+}
+function onPostDeleted(id) {
+  const nid = Number(id)
+  publicaciones.value = publicaciones.value.filter(p => Number(p.id) !== nid)
 }
 </script>

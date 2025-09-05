@@ -15,7 +15,6 @@
           type="text"
           placeholder="Título"
           class="w-full mb-3 px-4 py-2 border rounded"
-          required
         />
         <textarea
           v-model="descripcion"
@@ -36,7 +35,7 @@
           >
             Seleccionar archivo
           </button>
-        <input
+          <input
             ref="inputArchivo"
             type="file"
             accept="image/*,video/*"
@@ -74,7 +73,7 @@
 
 <script setup>
 import { ref } from 'vue'
-import axios from 'axios'
+import http from '@/services/http' // usa TU instancia con baseURL y token
 
 const titulo = ref('')
 const descripcion = ref('')
@@ -83,10 +82,10 @@ const archivo = ref(null)
 const loading = ref(false)
 const errorArchivo = ref('')
 
-const emit = defineEmits(['close', 'created'])
+const emit = defineEmits(['close', 'created', 'publicar'])
 const inputArchivo = ref(null)
 
-const MAX_IMAGE_MB = 4
+const MAX_IMAGE_MB = 6
 const MAX_VIDEO_MB = 60
 const MAX_VIDEO_SECONDS = 30.5
 
@@ -154,19 +153,18 @@ async function submitForm() {
   try {
     loading.value = true
     const fd = new FormData()
-    fd.append('title', titulo.value)
-    fd.append('content', descripcion.value)
+    if (titulo.value) fd.append('title', titulo.value)
+    fd.append('content', descripcion.value) // requerido por el back
     if (deporte.value) fd.append('sport', deporte.value)
-    fd.append('media', archivo.value) // obligatorio
+    fd.append('media', archivo.value) // NOMBRE CORRECTO para publications
 
-    const { data } = await axios.post('/publications', fd, {
-      headers: {
-        Authorization: `Bearer ${localStorage.getItem('token')}`,
-        'Content-Type': 'multipart/form-data',
-      }
-    })
+    // Usa tu instancia http -> enviará a {VITE_API_URL}/publications con Authorization
+    const { data } = await http.post('/publications', fd)
+    const payload = data?.data ?? data
 
-    emit('created', data.data ?? data)
+    // notifica al padre (compatibilidad con @publicar y @created)
+    emit('created', payload)
+    emit('publicar', payload)
     emit('close')
   } catch (e) {
     const api = e?.response?.data
