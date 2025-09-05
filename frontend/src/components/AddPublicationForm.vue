@@ -1,4 +1,3 @@
-<!-- src/components/AddPublicationForm.vue -->
 <template>
   <div class="fixed inset-0 bg-black/20 backdrop-blur-sm z-50 flex items-center justify-center">
     <div class="bg-white p-6 rounded-lg shadow-lg max-w-md w-full relative">
@@ -24,27 +23,34 @@
           class="w-full mb-3 px-4 py-2 border rounded"
           required
         ></textarea>
-        <!-- Botón personalizado para archivos -->
+
+        <!-- Archivo (obligatorio: imagen o vídeo) -->
         <div class="mb-4">
-        <span class="block text-sm font-medium text-gray-700 mb-1">Archivos</span>
-        <button
+          <span class="block text-sm font-medium text-gray-700 mb-1">
+            Imagen o vídeo (obligatorio)
+          </span>
+          <button
             type="button"
             class="w-full py-2 px-4 bg-gray-200 text-gray-700 rounded hover:bg-gray-300"
             @click="abrirInput"
-        >
-            Añadir archivo
-        </button>
+          >
+            Seleccionar archivo
+          </button>
         <input
             ref="inputArchivo"
             type="file"
-            multiple
+            accept="image/*,video/*"
             class="hidden"
-            @change="handleArchivos"
-        />
-        <p v-if="archivos.length" class="text-xs text-gray-500 mt-2">
-            {{ archivos.length }} archivo(s) seleccionado(s)
-        </p>
+            @change="handleArchivo"
+          />
+          <p v-if="archivo" class="text-xs text-gray-500 mt-2">
+            {{ archivo.name }} ({{ prettySize(archivo.size) }})
+          </p>
+          <p v-if="errorArchivo" class="text-xs text-red-600 mt-2">
+            {{ errorArchivo }}
+          </p>
         </div>
+
         <select v-model="deporte" class="w-full mb-4 px-4 py-2 border rounded">
           <option disabled value="">Selecciona un deporte</option>
           <option>Powerlifting</option>
@@ -56,9 +62,10 @@
 
         <button
           type="submit"
-          class="w-full py-2 text-white font-semibold rounded bg-gradient-to-r from-blue-900 to-blue-500 hover:opacity-90"
+          class="w-full py-2 text-white font-semibold rounded bg-gradient-to-r from-blue-900 to-blue-500 hover:opacity-90 disabled:opacity-60"
+          :disabled="loading"
         >
-          Publicar
+          {{ loading ? 'Publicando…' : 'Publicar' }}
         </button>
       </form>
     </div>
@@ -67,35 +74,112 @@
 
 <script setup>
 import { ref } from 'vue'
+import axios from 'axios'
 
 const titulo = ref('')
 const descripcion = ref('')
 const deporte = ref('')
-const archivos = ref([])
+const archivo = ref(null)
+const loading = ref(false)
+const errorArchivo = ref('')
 
-const emit = defineEmits(['close', 'publicar'])
+const emit = defineEmits(['close', 'created'])
 const inputArchivo = ref(null)
 
-const abrirInput = () => {
-  if (inputArchivo.value) {
-    inputArchivo.value.click()
+const MAX_IMAGE_MB = 4
+const MAX_VIDEO_MB = 60
+const MAX_VIDEO_SECONDS = 30.5
+
+const abrirInput = () => inputArchivo.value?.click()
+
+function prettySize(bytes) {
+  return (bytes / 1024 / 1024).toFixed(2) + ' MB'
+}
+
+function handleArchivo(e) {
+  errorArchivo.value = ''
+  const file = e.target.files?.[0] || null
+  if (!file) { archivo.value = null; return }
+
+  const type = file.type || ''
+  // Validación cliente (rápida)
+  if (type.startsWith('image/')) {
+    if (file.size > MAX_IMAGE_MB * 1024 * 1024) {
+      errorArchivo.value = `La imagen no puede superar ${MAX_IMAGE_MB} MB.`
+      archivo.value = null; return
+    }
+    archivo.value = file
+    return
+  }
+
+  if (type.startsWith('video/')) {
+    if (file.size > MAX_VIDEO_MB * 1024 * 1024) {
+      errorArchivo.value = `El vídeo no puede superar ${MAX_VIDEO_MB} MB.`
+      archivo.value = null; return
+    }
+    // Validar duración ≤ 30s con metadata del navegador
+    const url = URL.createObjectURL(file)
+    const v = document.createElement('video')
+    v.preload = 'metadata'
+    v.onloadedmetadata = () => {
+      URL.revokeObjectURL(url)
+      const seconds = v.duration
+      if (Number.isFinite(seconds) && seconds > MAX_VIDEO_SECONDS) {
+        errorArchivo.value = `El vídeo debe durar como máximo 30 segundos.`
+        archivo.value = null
+      } else {
+        archivo.value = file
+      }
+    }
+    v.onerror = () => {
+      URL.revokeObjectURL(url)
+      errorArchivo.value = 'No se pudo leer el vídeo.'
+      archivo.value = null
+    }
+    v.src = url
+    return
+  }
+
+  errorArchivo.value = 'Formato no permitido.'
+  archivo.value = null
+}
+
+async function submitForm() {
+  // Requiere archivo
+  if (!archivo.value) {
+    errorArchivo.value = 'Debes adjuntar una imagen o un vídeo.'
+    return
+  }
+
+  try {
+    loading.value = true
+    const fd = new FormData()
+    fd.append('title', titulo.value)
+    fd.append('content', descripcion.value)
+    if (deporte.value) fd.append('sport', deporte.value)
+    fd.append('media', archivo.value) // obligatorio
+
+    const { data } = await axios.post('/publications', fd, {
+      headers: {
+        Authorization: `Bearer ${localStorage.getItem('token')}`,
+        'Content-Type': 'multipart/form-data',
+      }
+    })
+
+    emit('created', data.data ?? data)
+    emit('close')
+  } catch (e) {
+    const api = e?.response?.data
+    if (api?.errors?.media?.length) {
+      errorArchivo.value = api.errors.media[0]
+    } else if (api?.message) {
+      alert(api.message)
+    } else {
+      alert('Error creando publicación')
+    }
+    console.error(e)
+  } finally {
+    loading.value = false
   }
 }
-
-const handleArchivos = (event) => {
-  archivos.value = Array.from(event.target.files)
-}
-
-const submitForm = () => {
-  emit('publicar', {
-    titulo: titulo.value,
-    descripcion: descripcion.value,
-    deporte: deporte.value,
-    archivos: archivos.value,
-    fecha: new Date().toISOString().split('T')[0]
-  })
-  emit('close')
-}
-
-
 </script>
