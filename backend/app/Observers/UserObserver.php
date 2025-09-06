@@ -9,13 +9,14 @@ class UserObserver
     public function created(User $user): void
     {
         if (! $user->profile()->exists()) {
-            $user->profile()->create([
-                // ajusta nombres de columnas a tu tabla `profiles`
-                'avatar_path' => null,
-                'sport_main'  => null,
-                'birthdate'   => null,
-                'bio'         => null,
-            ]);
+            $user->profile()->firstOrCreate([], [
+            'bio'         => null,
+            'sport'       => null,
+            'birthdate'   => null,
+            'avatar_b64'  => null,
+            'avatar_mime' => null,
+            'avatar_size' => null,
+        ]);
         }
     }
 }
