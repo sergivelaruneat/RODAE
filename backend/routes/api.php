@@ -9,6 +9,8 @@ use App\Http\Controllers\Api\CommentController;
 use App\Http\Controllers\Api\ProfileController;
 use App\Http\Controllers\Api\RoutineController;
 use App\Http\Controllers\Api\UserRoutineController;
+use App\Http\Controllers\Api\UserController;
+use App\Http\Controllers\Api\FollowController;
 use App\Models\User;
 
 /*
@@ -51,6 +53,9 @@ Route::get('/users/{user}/avatar',  [ProfileController::class, 'avatarUser'])->n
 Route::get('/routines', [RoutineController::class, 'index']);
 Route::get('/routines/{routine}', [RoutineController::class, 'show']);
 Route::get('/meta/sport', [RoutineController::class, 'sports']);
+
+// routes/api.php (público o dentro de auth si quieres)
+Route::get('/users', [UserController::class, 'index']);
 
 /*
 |--------------------------------------------------------------------------
@@ -132,4 +137,12 @@ Route::middleware('auth:api')->group(function () {
     Route::get('/users/{user}/routines/followed', [RoutineController::class, 'followedByUser']);
     Route::get('/users/{user}/routines/created',  [RoutineController::class, 'createdByUser']);
 
+    // Rutinas de seguimiento.
+    Route::get('/users/{user}/relationship', [FollowController::class, 'relationship'])->whereNumber('user');
+    Route::post('/users/{user}/follow',       [FollowController::class, 'follow'])->whereNumber('user');
+    Route::delete('/users/{user}/follow',     [FollowController::class, 'unfollow'])->whereNumber('user');
+
+    //ListarSeguidos
+    Route::get('/users/{user}/following', [FollowController::class, 'following'])
+    ->whereNumber('user');
 });
