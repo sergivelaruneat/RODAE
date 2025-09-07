@@ -18,7 +18,7 @@
         <div class="flex items-center space-x-6">
           <img
             :src="perfil?.avatarUrl || '/avatars/default.svg'"
-            :key="perfil?.avatarUrl"         
+            :key="perfil?.avatarUrl"
             alt="Foto de perfil"
             class="w-28 h-28 rounded-full object-cover cursor-pointer"
             @click="ampliarFoto = true"
@@ -73,7 +73,7 @@
           <button
             class="px-6 py-2 text-sm font-semibold"
             :class="tabActiva === 'rutinas' ? 'border-b-2 border-blue-500 text-blue-700' : 'text-gray-500'"
-            @click="tabActiva = 'rutinas'"
+            @click="onOpenRoutinesTab"
           >
             Rutinas
           </button>
@@ -84,14 +84,53 @@
           <div v-if="cargando" class="text-sm text-gray-500">Cargando…</div>
 
           <template v-else>
+            <!-- PUBLICACIONES -->
             <PublicationFeed
               v-if="tabActiva === 'publicaciones'"
-             :posts="publicaciones"
-             :current-user="currentUser"
-             @deleted="onPostDeleted"
+              :posts="publicaciones"
+              :current-user="currentUser"
+              @deleted="onPostDeleted"
             />
-            <div v-else class="text-center text-sm text-gray-500">
-              Aquí irán las rutinas del usuario.
+
+            <!-- RUTINAS -->
+            <div v-else>
+              <div v-if="routinesLoading" class="text-sm text-gray-500 text-center">
+                Cargando rutinas…
+              </div>
+
+              <template v-else>
+                <!-- Entrenador: creadas por mí -->
+                <div v-if="isTrainer">
+                  <h3 class="text-base font-semibold mb-2">Creadas por mí</h3>
+                  <div class="bg-white rounded border mb-6" v-if="routinesCreated.length">
+                    <ul class="divide-y divide-gray-200">
+                      <RoutineCard
+                        v-for="r in routinesCreated"
+                        :key="`c-${r.id}`"
+                        :routine="r"
+                        @select="openRoutine"
+                      />
+                    </ul>
+                  </div>
+                  <p v-else class="text-sm text-gray-500 mb-6">Aún no has creado rutinas.</p>
+                </div>
+
+                <!-- Seguidas -->
+                <h3 class="text-base font-semibold mb-2">Que sigo</h3>
+                <div class="bg-white rounded border" v-if="routinesFollowed.length">
+                  <ul class="divide-y divide-gray-200">
+                    <RoutineCard
+                      v-for="r in routinesFollowed"
+                      :key="`f-${r.id}`"
+                      :routine="r"
+                      @select="openRoutine"
+                    />
+                  </ul>
+                </div>
+                <p v-else class="text-sm text-gray-500">
+                  {{ isTrainer ? 'No sigues ninguna rutina.' : 'Aún no sigues ninguna rutina.' }}
+                </p>
+              </template>
             </div>
           </template>
         </div>
@@ -114,7 +153,7 @@
       </div>
     </div>
 
-    <!-- Modal seguidos (placeholder hasta implementar follows) -->
+    <!-- Modal seguidos -->
     <div
       v-if="mostrarSeguidos"
       class="fixed inset-0 backdrop-blur-sm bg-gray-800/20 flex items-center justify-center z-50"
@@ -142,10 +181,11 @@ import { useRouter } from 'vue-router'
 import Navbar from '@/components/Navbar.vue'
 import PublicationFeed from '@/components/PublicationFeed.vue'
 import AddPublicationForm from '@/components/AddPublicationForm.vue'
+import RoutineCard from '@/components/RoutineCard.vue'
 import { getMyProfile, getUserPublications } from '@/services/profileService'
+import { getMyCreatedRoutines, getMyRoutines } from '@/services/routineService'
 
 const currentUser = ref(JSON.parse(localStorage.getItem('user') || 'null'))
-
 const router = useRouter()
 
 // estado UI
@@ -155,32 +195,34 @@ const mostrarFormulario = ref(false)
 const mostrarSeguidos = ref(false)
 const cargando = ref(true)
 
-// perfil (dinámico)
+// perfil
 const perfil = ref(null)
-
 const nombre = computed(() => perfil.value?.name ?? '')
 const correo = computed(() => perfil.value?.email ?? '')
 const edad = computed(() => perfil.value?.age ?? '—')
 const deporte = computed(() => perfil.value?.sport ?? '')
 const descripcion = computed(() => perfil.value?.bio ?? '')
 const rol = computed(() => perfil.value?.role ?? 'athlete')
+const isTrainer = computed(() => rol.value === 'trainer')
 const avatarUrl = computed(() => perfil.value?.avatarUrl || placeholderAvatar)
 
 const placeholderAvatar =
   'data:image/svg+xml;utf8,' +
   encodeURIComponent(`<svg xmlns="http://www.w3.org/2000/svg" width="160" height="160"><rect width="100%" height="100%" fill="#f1f5f9"/><text x="50%" y="50%" dominant-baseline="middle" text-anchor="middle" fill="#94a3b8" font-family="Arial" font-size="14">Sin avatar</text></svg>`)
 
-// publicaciones (dinámicas)
+// publicaciones
 const publicaciones = ref([])
+
+// rutinas
+const routinesLoading = ref(false)
+const routinesCreated = ref([])
+const routinesFollowed = ref([])
 
 onMounted(async () => {
   try {
     cargando.value = true
-    // 1) Perfil propio
-    const p = await getMyProfile() // <- devuelve el objeto “desenvuelto”
+    const p = await getMyProfile()
     perfil.value = p
-
-    // 2) Publicaciones del usuario en el formato que espera PublicationFeed
     await cargarPublicaciones(p.id)
   } catch (e) {
     console.error('Error cargando perfil o publicaciones', e)
@@ -191,29 +233,17 @@ onMounted(async () => {
 
 async function cargarPublicaciones (userId, page = 1) {
   const resp = await getUserPublications(userId, page)
-
-  // Tu endpoint suele devolver { data: [...], meta: {...} }
   const items = Array.isArray(resp?.data) ? resp.data : (Array.isArray(resp) ? resp : [])
-
   publicaciones.value = items.map(mapToFeedItem)
 }
 
-/**
- * Mapea la publicación de API al formato que usa PublicationFeed
- * Formato esperado por tu feed “quemado”:
- *  {
- *    id, tipo: 'imagen' | 'video',
- *    archivos: [urls...], nombre, descripcion, fecha(YYYY-MM-DD), deporte: [..],
- *    comentarios: []
- *  }
- */
 function mapToFeedItem (apiItem) {
   const mediaUrl =
     apiItem.media_url || apiItem.image_url || apiItem.mediaUrl || apiItem.url || null
   const isVideo =
     (apiItem.media_type && apiItem.media_type === 'video') ||
     /\.mp4$|\.webm$|\.ogg$/i.test(mediaUrl || '')
-    const ownerId = apiItem.user?.id ?? apiItem.user_id ?? perfil.value?.id ?? null
+  const ownerId = apiItem.user?.id ?? apiItem.user_id ?? perfil.value?.id ?? null
 
   return {
     id: apiItem.id,
@@ -231,28 +261,43 @@ function mapToFeedItem (apiItem) {
       username: apiItem.user?.username ?? perfil.value?.username ?? '',
       avatarUrl: apiItem.user?.avatar_url ?? perfil.value?.avatarUrl ?? '',
       sport: apiItem.user?.sport ?? perfil.value?.sport ?? ''
-   }
-  }
-}
-
-// Al publicar desde el modal, refrescamos el feed
-const anadirPublicacion = async (_nueva) => {
-  try {
-    mostrarFormulario.value = false
-    if (perfil.value?.id) {
-      await cargarPublicaciones(perfil.value.id, 1)
     }
-  } catch (e) {
-    console.error('No se pudo refrescar el feed tras publicar', e)
   }
 }
 
-
-const goToEditProfile = () => {
-  router.push('/editprofile')
+// RUTINAS: cargar al abrir el tab
+const onOpenRoutinesTab = async () => {
+  tabActiva.value = 'rutinas'
+  if (routinesCreated.value.length || routinesFollowed.value.length) return
+  await fetchRoutines()
 }
+
+async function fetchRoutines () {
+  try {
+    routinesLoading.value = true
+    const [followed, created] = await Promise.all([
+      getMyRoutines().catch(() => []),
+      isTrainer.value ? getMyCreatedRoutines().catch(() => []) : Promise.resolve([])
+    ])
+    // deduplicar si el trainer sigue alguna suya
+    const createdIds = new Set(created.map(r => r.id))
+    routinesFollowed.value = followed.filter(r => !createdIds.has(r.id))
+    routinesCreated.value = created
+  } catch (e) {
+    console.error('Error cargando rutinas', e)
+    routinesFollowed.value = []
+    routinesCreated.value = []
+  } finally {
+    routinesLoading.value = false
+  }
+}
+
+const goToEditProfile = () => router.push('/editprofile')
 function onPostDeleted(id) {
   const nid = Number(id)
   publicaciones.value = publicaciones.value.filter(p => Number(p.id) !== nid)
 }
+
+// click en una rutina
+const openRoutine = (id) => router.push({ name: 'RoutineSelected', params: { id } })
 </script>

@@ -1,124 +1,181 @@
 <template>
   <div class="min-h-screen bg-gray-50">
     <Navbar />
-    
-    <div class="max-w-4xl mx-auto py-10 px-6">
-      <!-- Cabecera -->
-      <div class="flex items-center justify-between mb-4">
-          <h2 class="text-2xl font-bold">Rutina de pecho</h2>
-          <router-link
-            to="/routines"
-            class="flex items-center gap-1 text-sm border-2 border-transparent bg-white text-blue-700 font-medium px-3 py-1 rounded hover:text-white hover:bg-gradient-to-r from-blue-900 to-blue-500 hover:border-transparent transition"
-            :style="{
-              borderImage: 'linear-gradient(to right, #1e3a8a, #3b82f6) 1',
-              borderStyle: 'solid',
-              borderWidth: '2px',
-              borderRadius: '0.5rem'
-            }"
-          >
-            <ArrowLeft class="w-4 h-4" />
-            Volver
-          </router-link>
-        </div>
-      <p class="text-sm text-gray-600">
-        Creado por
-        <span
-          class="text-blue-600 hover:underline cursor-pointer"
-          @click="irAlPerfil(rutina.creadorUsuario)"
-        >
-          {{ rutina.creador }}
-        </span>
-        • {{ rutina.deporte }}
-      </p>
-      <p class="text-gray-700 mt-2">{{ rutina.descripcion }}</p>
 
-      <!-- Tabla de ejercicios -->
-      <div class="mt-6 overflow-x-auto">
-        <table class="min-w-full border rounded shadow">
-          <thead>
-            <tr class="bg-blue-100 text-left">
-              <th class="px-4 py-2">Ejercicio</th>
-              <th class="px-4 py-2">Descripción</th>
-              <th class="px-4 py-2">Descanso</th>
-              <th class="px-4 py-2">Series x Repeticiones</th>
+    <div class="max-w-4xl mx-auto p-4">
+      <div class="flex items-center justify-between mb-4">
+        <h1 class="text-xl font-semibold">{{ routine?.name || 'Rutina' }}</h1>
+        <router-link
+          to="/routines"
+          class="text-sm px-3 py-1 rounded border hover:bg-gray-50"
+        >
+          Volver
+        </router-link>
+      </div>
+
+      <div v-if="loading" class="bg-white rounded border p-6 text-center text-gray-600">
+        Cargando…
+      </div>
+
+      <div v-else-if="routine" class="bg-white rounded border p-6">
+        <div class="flex items-center justify-between">
+          <div class="text-sm text-gray-600">
+            <span class="font-medium">{{ routine.owner?.name ?? '—' }}</span>
+            <span class="mx-2 text-gray-400">·</span>
+            <span>{{ routine.sport_label || routine.sport || '—' }}</span>
+            <span class="mx-2 text-gray-400">·</span>
+            <span>{{ routine.exercises_count ?? 0 }} ejercicios</span>
+          </div>
+
+          <div class="flex items-center gap-2">
+            <!-- Botón editar SOLO si soy trainer y propietario -->
+            <button
+              v-if="isTrainerOwner"
+              @click="goEdit"
+              class="px-3 py-1 text-sm rounded border hover:bg-gray-50"
+            >
+              Editar rutina
+            </button>
+
+            <button
+              v-if="!following"
+              @click="onFollow"
+              class="px-3 py-1 text-sm text-white rounded bg-blue-600 hover:bg-blue-700"
+            >Seguir</button>
+            <button
+              v-else
+              @click="onUnfollow"
+              class="px-3 py-1 text-sm rounded border hover:bg-gray-50"
+            >Dejar de seguir</button>
+
+            <span class="text-sm text-yellow-700">
+              ★ {{ Number(routine.rating_avg ?? 0).toFixed(1) }}
+            </span>
+          </div>
+        </div>
+
+        <h3 class="mt-6 font-semibold">Ejercicios</h3>
+        <table class="w-full mt-2 text-sm border">
+          <thead class="bg-gray-100">
+            <tr>
+              <th class="border px-2 py-1 text-left">#</th>
+              <th class="border px-2 py-1 text-left">Ejercicio</th>
+              <th class="border px-2 py-1 text-left">Descripción</th>
+              <th class="border px-2 py-1 text-left">Series x Reps</th>
+              <th class="border px-2 py-1 text-left">Descanso</th>
             </tr>
           </thead>
           <tbody>
-            <tr v-for="(ejercicio, index) in rutina.ejercicios" :key="index" class="border-t">
-              <td class="px-4 py-2 font-semibold">{{ ejercicio.nombre }}</td>
-              <td class="px-4 py-2">{{ ejercicio.descripcion }}</td>
-              <td class="px-4 py-2">{{ ejercicio.descanso }}</td>
-              <td class="px-4 py-2">{{ ejercicio.repeticiones }}</td>
+            <tr v-for="(ex, i) in routine.exercises" :key="ex.id ?? i">
+              <td class="border px-2 py-1">{{ ex.position }}</td>
+              <td class="border px-2 py-1">{{ ex.name }}</td>
+              <td class="border px-2 py-1">{{ ex.description }}</td>
+              <td class="border px-2 py-1">{{ ex.series_reps || '—' }}</td>
+              <td class="border px-2 py-1">{{ ex.rest || '—' }}</td>
             </tr>
           </tbody>
         </table>
-      </div>
 
-      <!-- Botones -->
-      <div class="flex justify-between mt-6">
-        <button
-          class="px-4 py-2 text-sm bg-gradient-to-r from-purple-600 to-purple-400 text-white rounded hover:opacity-90"
-        >
-          Valorar
-        </button>
-        <button
-          class="px-4 py-2 text-sm bg-gradient-to-r from-blue-900 to-blue-500 text-white rounded hover:opacity-90"
-        >
-          Añadir a mis rutinas
-        </button>
+        <!-- Valoración (si sigo la rutina) -->
+        <div v-if="following" class="mt-4">
+          <label class="text-sm text-gray-700 mr-2">Valorar:</label>
+          <select v-model.number="myRating" class="border rounded px-2 py-1 text-sm">
+            <option :value="n" v-for="n in 5" :key="n">{{ n }}</option>
+          </select>
+          <button @click="onRate" class="ml-2 px-3 py-1 text-sm rounded border hover:bg-gray-50">Guardar</button>
+          <button @click="onUnrate" class="ml-1 px-3 py-1 text-sm rounded border hover:bg-gray-50">Quitar</button>
+        </div>
       </div>
     </div>
   </div>
 </template>
 
 <script setup>
-import { useRouter } from 'vue-router'
+import { ref, computed, onMounted, watch } from 'vue'
+import { useRoute, useRouter } from 'vue-router'
 import Navbar from '@/components/Navbar.vue'
-import { ArrowLeft } from 'lucide-vue-next'
+import { getRoutine, followRoutine, unfollowRoutine, rateRoutine, unrateRoutine } from '@/services/routineService'
 
+const route = useRoute()
 const router = useRouter()
 
-const rutina = {
-  creador: 'Elena Serna',
-  creadorUsuario: 'elenaserna80',
-  deporte: 'Powerlifting',
-  descripcion: 'Entrenamiento enfocado a fuerza máxima en press banca.',
-  ejercicios: [
-    {
-      nombre: 'Press banca plano',
-      descripcion: 'Ejercicio principal para desarrollar fuerza en el pectoral mayor, tríceps y deltoides anterior.',
-      descanso: '2-3 min',
-      repeticiones: '5 x 3'
-    },
-    {
-      nombre: 'Press inclinado con barra',
-      descripcion: 'Trabaja la parte superior del pectoral, también implica tríceps y hombros.',
-      descanso: '2 min',
-      repeticiones: '4 x 5'
-    },
-    {
-      nombre: 'Press con mancuernas en banco plano',
-      descripcion: 'Mayor rango de movimiento para una activación profunda del pectoral.',
-      descanso: '90 seg',
-      repeticiones: '4 x 8'
-    },
-    {
-      nombre: 'Fondos en paralelas',
-      descripcion: 'Enfocado en pectoral inferior y tríceps, muy útil para fuerza funcional.',
-      descanso: '2 min',
-      repeticiones: '3 x 6-8'
-    },
-    {
-      nombre: 'Aperturas con mancuernas',
-      descripcion: 'Aislamiento del pecho para finalizar la rutina, ideal para mejorar el estiramiento.',
-      descanso: '60 seg',
-      repeticiones: '3 x 12'
-    }
-  ]
+const routine   = ref(null)
+const loading   = ref(false)
+const following = ref(false)
+const myRating  = ref(5)
+
+// usuario logueado desde storage
+function getStoredUser () {
+  try { return JSON.parse(localStorage.getItem('user') || 'null') }
+  catch { return null }
+}
+const currentUser = getStoredUser()
+
+// soy trainer y además propietario de la rutina
+const isTrainerOwner = computed(() =>
+  currentUser?.role === 'trainer' && routine.value?.owner_user_id === currentUser?.id
+)
+
+const goEdit = () => {
+  router.push({ name: 'RoutineEdit', params: { id: routine.value.id } })
 }
 
-const irAlPerfil = (usuario) => {
-  router.push(`/profile/${usuario}`)
+const fetchRoutine = async () => {
+  loading.value = true
+  try {
+    const data = await getRoutine(route.params.id)
+    routine.value = data
+    // preferimos is_following; si no llega, caemos a user_rating
+    following.value = (data.is_following !== undefined) ? !!data.is_following : !!data.user_rating
+    if (data.user_rating != null) myRating.value = data.user_rating
+  } catch (e) {
+    console.error(e)
+  } finally {
+    loading.value = false
+  }
 }
+
+const onFollow = async () => {
+  try {
+    await followRoutine(routine.value.id)
+    following.value = true
+    if (routine.value) routine.value.is_following = true
+  } catch (e) { console.error(e) }
+}
+
+const onUnfollow = async () => {
+  try {
+    await unfollowRoutine(routine.value.id)
+    following.value = false
+    if (routine.value) {
+      routine.value.is_following = false
+      routine.value.user_rating = null
+    }
+  } catch (e) { console.error(e) }
+}
+
+const onRate = async () => {
+  try {
+    const resp = await rateRoutine(routine.value.id, myRating.value)
+    if (routine.value) {
+      routine.value.rating_avg = resp?.rating_avg ?? routine.value.rating_avg
+      routine.value.user_rating = myRating.value
+    }
+  } catch (e) { console.error(e) }
+}
+
+const onUnrate = async () => {
+  try {
+    const resp = await unrateRoutine(routine.value.id)
+    if (routine.value) {
+      routine.value.rating_avg = resp?.rating_avg ?? routine.value.rating_avg
+      routine.value.user_rating = null
+    }
+  } catch (e) { console.error(e) }
+}
+
+onMounted(fetchRoutine)
+// si vuelves desde editar con ?refresh=..., recarga
+watch(() => route.query.refresh, (v) => { if (v) fetchRoutine() })
 </script>
 

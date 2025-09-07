@@ -17,6 +17,7 @@ const routes = [
   { path: '/routine/create', name: 'RoutineCreate', component: () => import('@/views/RoutineCreateView.vue')},
   { path: '/progress', name: 'Progress', component: () => import('@/views/ProgressView.vue') },
   { path: '/report/:id', name: 'ReportView', component: () => import('@/views/ReportView.vue')},
+  { path: '/routine/:id/edit', name: 'RoutineEdit', component: () => import('@/views/RoutineEditView.vue') },
 ]
 
 const router = createRouter({
