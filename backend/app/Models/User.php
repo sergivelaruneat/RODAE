@@ -47,4 +47,16 @@ class User extends Authenticatable implements MustVerifyEmail, JWTSubject
         return $this->belongsToMany(User::class, 'follows', 'followed_id', 'follower_id')
             ->withTimestamps();
     }
+
+    public function routinesCreated()
+    {
+        return $this->hasMany(Routine::class, 'owner_user_id');
+    }
+
+    public function routinesFollowed()
+    {
+        return $this->belongsToMany(Routine::class, 'user_routines', 'user_id', 'routine_id')
+            ->withPivot('rating')
+            ->withTimestamps();
+    }
 }

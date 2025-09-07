@@ -22,9 +22,6 @@ class AuthController extends Controller
             'role'     => $data['role'] ?? 'user',
         ]);
 
-        // perfil vacío inicial (ajusta defaults si quieres)
-        $user->profile()->create([]);
-
         $user->sendEmailVerificationNotification();
 
         return response()->json(['user' => $user], 201);
