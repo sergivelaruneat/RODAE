@@ -58,11 +58,15 @@ export function setBaseURL(url) {
 
 // ---- Interceptor de request ----
 http.interceptors.request.use((config) => {
-  // Aceptamos JSON por defecto
   config.headers = config.headers || {};
   config.headers.Accept = "application/json";
 
-  // Para JSON normal, fija Content-Type; para FormData NO lo fijes (deja que Axios ponga boundary)
+  // ✅ token siempre actualizado
+  const t = localStorage.getItem("token");
+  if (t) config.headers.Authorization = `Bearer ${t}`;
+  else delete config.headers.Authorization;
+
+  // Content-Type solo si NO es FormData
   const isFormData =
     typeof FormData !== "undefined" && config.data instanceof FormData;
   if (!isFormData && !config.headers["Content-Type"]) {

@@ -29,7 +29,7 @@
               <div class="flex gap-2">
                 <button
                   class="px-4 py-1 bg-gradient-to-r from-blue-500 to-blue-300 text-white text-sm rounded hover:opacity-90"
-                  @click="mostrarSeguidos = true"
+                  @click="openSeguidos"
                 >
                   Seguidos
                 </button>
@@ -163,7 +163,36 @@
           <h3 class="text-lg font-bold">Usuarios seguidos</h3>
           <button @click="mostrarSeguidos = false" class="text-xl font-bold hover:text-red-500">×</button>
         </div>
-        <p class="text-sm text-gray-500">Próximamente: aquí verás el listado de seguidos.</p>
+
+        <div v-if="seguidosLoading" class="text-sm text-gray-500">Cargando…</div>
+
+        <template v-else>
+          <p v-if="!seguidos.length" class="text-sm text-gray-500">No sigues a nadie todavía.</p>
+
+          <ul v-else class="space-y-2">
+            <li v-for="u in seguidos" :key="u.id">
+              <UserCard :user="u" @select="goOtherProfile(u.id)" />
+            </li>
+          </ul>
+
+          <div v-if="segMeta.last_page > 1" class="mt-4 flex items-center justify-between">
+            <button
+              class="px-3 py-1 rounded border disabled:opacity-50"
+              :disabled="segPage <= 1"
+              @click="loadSeguidos(segPage - 1)"
+            >Anterior</button>
+
+            <span class="text-xs text-gray-500">
+              Página {{ segPage }} de {{ segMeta.last_page }}
+            </span>
+
+            <button
+              class="px-3 py-1 rounded border disabled:opacity-50"
+              :disabled="segPage >= segMeta.last_page"
+              @click="loadSeguidos(segPage + 1)"
+            >Siguiente</button>
+          </div>
+        </template>
       </div>
     </div>
 
@@ -174,7 +203,6 @@
     />
   </div>
 </template>
-
 <script setup>
 import { ref, computed, onMounted } from 'vue'
 import { useRouter } from 'vue-router'
@@ -182,21 +210,26 @@ import Navbar from '@/components/Navbar.vue'
 import PublicationFeed from '@/components/PublicationFeed.vue'
 import AddPublicationForm from '@/components/AddPublicationForm.vue'
 import RoutineCard from '@/components/RoutineCard.vue'
+import UserCard from '@/components/UserCard.vue'
+
 import { getMyProfile, getUserPublications } from '@/services/profileService'
 import { getMyCreatedRoutines, getMyRoutines } from '@/services/routineService'
+import { getFollowing, userAvatarUrl } from '@/services/userService'
 
-const currentUser = ref(JSON.parse(localStorage.getItem('user') || 'null'))
 const router = useRouter()
 
-// estado UI
+// ------ usuario logueado (si lo necesitas para pasar al feed) ------
+const currentUser = ref(JSON.parse(localStorage.getItem('user') || 'null'))
+
+// ------ estado UI general ------
 const ampliarFoto = ref(false)
 const tabActiva = ref('publicaciones')
 const mostrarFormulario = ref(false)
-const mostrarSeguidos = ref(false)
 const cargando = ref(true)
 
-// perfil
+// ------ perfil propio ------
 const perfil = ref(null)
+
 const nombre = computed(() => perfil.value?.name ?? '')
 const correo = computed(() => perfil.value?.email ?? '')
 const edad = computed(() => perfil.value?.age ?? '—')
@@ -204,32 +237,15 @@ const deporte = computed(() => perfil.value?.sport ?? '')
 const descripcion = computed(() => perfil.value?.bio ?? '')
 const rol = computed(() => perfil.value?.role ?? 'athlete')
 const isTrainer = computed(() => rol.value === 'trainer')
-const avatarUrl = computed(() => perfil.value?.avatarUrl || placeholderAvatar)
 
 const placeholderAvatar =
   'data:image/svg+xml;utf8,' +
   encodeURIComponent(`<svg xmlns="http://www.w3.org/2000/svg" width="160" height="160"><rect width="100%" height="100%" fill="#f1f5f9"/><text x="50%" y="50%" dominant-baseline="middle" text-anchor="middle" fill="#94a3b8" font-family="Arial" font-size="14">Sin avatar</text></svg>`)
 
-// publicaciones
+const avatarUrl = computed(() => perfil.value?.avatarUrl || placeholderAvatar)
+
+// ------ publicaciones ------
 const publicaciones = ref([])
-
-// rutinas
-const routinesLoading = ref(false)
-const routinesCreated = ref([])
-const routinesFollowed = ref([])
-
-onMounted(async () => {
-  try {
-    cargando.value = true
-    const p = await getMyProfile()
-    perfil.value = p
-    await cargarPublicaciones(p.id)
-  } catch (e) {
-    console.error('Error cargando perfil o publicaciones', e)
-  } finally {
-    cargando.value = false
-  }
-})
 
 async function cargarPublicaciones (userId, page = 1) {
   const resp = await getUserPublications(userId, page)
@@ -243,6 +259,7 @@ function mapToFeedItem (apiItem) {
   const isVideo =
     (apiItem.media_type && apiItem.media_type === 'video') ||
     /\.mp4$|\.webm$|\.ogg$/i.test(mediaUrl || '')
+
   const ownerId = apiItem.user?.id ?? apiItem.user_id ?? perfil.value?.id ?? null
 
   return {
@@ -265,7 +282,16 @@ function mapToFeedItem (apiItem) {
   }
 }
 
-// RUTINAS: cargar al abrir el tab
+function onPostDeleted (id) {
+  const nid = Number(id)
+  publicaciones.value = publicaciones.value.filter(p => Number(p.id) !== nid)
+}
+
+// ------ rutinas (tab) ------
+const routinesLoading = ref(false)
+const routinesCreated = ref([])
+const routinesFollowed = ref([])
+
 const onOpenRoutinesTab = async () => {
   tabActiva.value = 'rutinas'
   if (routinesCreated.value.length || routinesFollowed.value.length) return
@@ -279,7 +305,7 @@ async function fetchRoutines () {
       getMyRoutines().catch(() => []),
       isTrainer.value ? getMyCreatedRoutines().catch(() => []) : Promise.resolve([])
     ])
-    // deduplicar si el trainer sigue alguna suya
+    // Si el trainer sigue alguna suya, la quitamos del bloque "seguidas" para no duplicar
     const createdIds = new Set(created.map(r => r.id))
     routinesFollowed.value = followed.filter(r => !createdIds.has(r.id))
     routinesCreated.value = created
@@ -292,12 +318,65 @@ async function fetchRoutines () {
   }
 }
 
-const goToEditProfile = () => router.push('/editprofile')
-function onPostDeleted(id) {
-  const nid = Number(id)
-  publicaciones.value = publicaciones.value.filter(p => Number(p.id) !== nid)
+const openRoutine = (id) => router.push({ name: 'RoutineSelected', params: { id } })
+
+// ------ modal "Seguidos" ------
+const mostrarSeguidos = ref(false)
+const seguidosLoading = ref(false)
+const seguidos = ref([]) // [{id,name,email,role,avatarUrl}]
+const segPage = ref(1)
+const segMeta = ref({ last_page: 1, current_page: 1, total: 0 })
+
+const openSeguidos = async () => {
+  mostrarSeguidos.value = true
+  await loadSeguidos(1)
 }
 
-// click en una rutina
-const openRoutine = (id) => router.push({ name: 'RoutineSelected', params: { id } })
+const loadSeguidos = async (page = 1) => {
+  if (!perfil.value?.id) return
+  seguidosLoading.value = true
+  try {
+    const resp = await getFollowing(perfil.value.id, { page, per_page: 20 })
+    const items = Array.isArray(resp?.data) ? resp.data : (resp?.data ?? [])
+
+    seguidos.value = items.map(u => ({
+      id: u.id,
+      name: u.name,
+      email: u.email,
+      role: u.role,
+      avatarUrl: userAvatarUrl(u.id, u.avatar_updated_at)
+    }))
+
+    segMeta.value = resp?.meta || { last_page: 1, current_page: page, total: items.length }
+    segPage.value = segMeta.value.current_page || page
+  } catch (e) {
+    console.error('No se pudo cargar seguidos', e)
+    seguidos.value = []
+    segMeta.value = { last_page: 1, current_page: 1, total: 0 }
+  } finally {
+    seguidosLoading.value = false
+  }
+}
+
+const goOtherProfile = (id) => {
+  mostrarSeguidos.value = false
+  router.push({ name: 'OtherProfile', params: { user: id } })
+}
+
+// ------ navegación ------
+const goToEditProfile = () => router.push('/editprofile')
+
+// ------ montaje ------
+onMounted(async () => {
+  try {
+    cargando.value = true
+    const p = await getMyProfile()
+    perfil.value = p
+    await cargarPublicaciones(p.id)
+  } catch (e) {
+    console.error('Error cargando perfil o publicaciones', e)
+  } finally {
+    cargando.value = false
+  }
+})
 </script>

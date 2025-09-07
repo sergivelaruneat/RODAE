@@ -18,6 +18,8 @@ const routes = [
   { path: '/progress', name: 'Progress', component: () => import('@/views/ProgressView.vue') },
   { path: '/report/:id', name: 'ReportView', component: () => import('@/views/ReportView.vue')},
   { path: '/routine/:id/edit', name: 'RoutineEdit', component: () => import('@/views/RoutineEditView.vue') },
+  { path: '/users/search', name: 'UsersSearch', component: () => import('@/views/UsersSearchView.vue') },
+
 ]
 
 const router = createRouter({
