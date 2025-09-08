@@ -12,10 +12,6 @@
           <ImageIcon class="w-5 h-5" />
           <span class="text-transparent bg-clip-text bg-gradient-to-r from-blue-900 to-blue-500">Publicaciones</span>
         </router-link>
-        <router-link to="/messages" class="flex items-center space-x-1 hover:text-blue-600">
-          <MailIcon class="w-5 h-5" />
-          <span class="text-transparent bg-clip-text bg-gradient-to-r from-blue-900 to-blue-500">Mensajes</span>
-        </router-link>
         <router-link to="/routines" class="flex items-center space-x-1 hover:text-blue-600">
           <DumbbellIcon class="w-5 h-5" />
           <span class="text-transparent bg-clip-text bg-gradient-to-r from-blue-900 to-blue-500">Rutinas</span>

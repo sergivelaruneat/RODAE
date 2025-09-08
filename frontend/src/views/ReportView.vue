@@ -190,23 +190,31 @@ const seriesRepsText = (t) => (t && String(t).trim() !== '' ? String(t) : '—')
 function buildRowsFromReport(data) {
   rows.splice(0)
   const ordered = [...(data.items || [])].sort(
-    (a, b) => (a.routine_exercise?.position ?? 0) - (b.routine_exercise?.position ?? 0)
+    (a, b) =>
+      ((a.position ?? a.routine_exercise?.position ?? 0) -
+       (b.position ?? b.routine_exercise?.position ?? 0))
   )
+
   ordered.forEach((it, idx) => {
-    const ex = it.routine_exercise || {}
+    const ex   = it.routine_exercise || {}
+    const name = it.exercise_name ?? ex.name ?? '—'
+    const rest = it.rest ?? ex.rest ?? null
+    const sr   = it.series_reps ?? ex.series_reps ?? null
+
     rows.push({
       localKey: `${it.id ?? 'new'}-${idx}`,
       id: it.id ?? null,
-      routine_exercise_id: ex.id,
-      name: ex.name || '—',
-      restText: restText(ex.rest),
-      seriesReps: seriesRepsText(ex.series_reps),
+      routine_exercise_id: it.routine_exercise_id ?? ex.id,
+      name,
+      restText: restText(rest),
+      seriesReps: seriesRepsText(sr),
       difficulty: it.difficulty ?? 1,
       metric: it.metric ?? '',
       completed: !!it.completed,
     })
   })
 }
+
 
 function buildRowsFromRoutine(rutina) {
   rows.splice(0)
