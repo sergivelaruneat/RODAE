@@ -109,17 +109,14 @@ const crearRutina = async () => {
   const payload = {
     name: nombre.value.trim(),
     sport: deporte.value,
-    exercises: ejercicios.value.map((e, idx) => {
-      const { series, reps } = parseSeriesReps(e.seriesReps)
-      return {
-        name: e.nombre.trim(),
-        description: e.descripcion.trim(),
-        rest_seconds: parseRest(e.descanso),
-        series,
-        reps,
-        position: idx + 1,
-      }
-    }),
+    exercises: ejercicios.value.map((e, idx) => ({
+      name: e.nombre.trim(),
+      description: e.descripcion?.trim() || null,
+      position: idx + 1,
+      // 👇 claves que espera el back
+      series_reps: e.seriesReps?.trim() || null,
+      rest: e.descanso?.trim() || null,
+    })),
   }
 
   try {
