@@ -1,0 +1,349 @@
+<?php
+
+namespace App\Http\Controllers\Api;
+
+use App\Http\Controllers\Controller;
+use App\Http\Requests\Report\StoreReportRequest;
+use App\Http\Requests\Report\UpdateReportRequest;
+use App\Http\Resources\ReportDetailResource;
+use App\Http\Resources\ReportResource;
+use App\Http\Resources\RoutineResource;
+use App\Models\Report;
+use App\Models\ReportExercise;
+use App\Models\Routine;
+use App\Models\RoutineExercise;
+use Illuminate\Http\Request;
+use Illuminate\Support\Carbon;
+use Illuminate\Support\Facades\DB;
+use Illuminate\Foundation\Auth\Access\AuthorizesRequests;
+
+class ReportController extends Controller
+{
+    use AuthorizesRequests;
+
+    /**
+     * GET /reports
+     * Lista paginada de mis reportes (usuario autenticado).
+     * Filtros opcionales: year, month, from, to.
+     */
+    public function index(Request $request)
+    {
+        $this->authorize('viewAny', Report::class);
+
+        $userId = $request->user()->id;
+        $per    = $request->integer('per_page', 15);
+
+        $q = Report::query()
+            ->with([
+                'routine:id,name,sport,owner_user_id,rating_avg,exercises_count',
+            ])
+            ->forUser($userId)
+            ->orderByDesc('created_at');
+
+        // Rango de fechas
+        if ($request->filled('from') && $request->filled('to')) {
+            $from = Carbon::parse($request->input('from'))->startOfDay();
+            $to   = Carbon::parse($request->input('to'))->endOfDay();
+            $q->whereBetween('created_at', [$from, $to]);
+        } elseif ($request->filled('year') && $request->filled('month')) {
+            $year  = (int) $request->input('year');
+            $month = (int) $request->input('month');
+            $from  = Carbon::create($year, $month, 1)->startOfDay();
+            $to    = (clone $from)->endOfMonth()->endOfDay();
+            $q->whereBetween('created_at', [$from, $to]);
+        }
+
+        return ReportResource::collection($q->paginate($per));
+    }
+
+    /**
+     * POST /reports
+     * Crea un reporte con items (ejercicios ejecutados).
+     */
+    public function store(StoreReportRequest $request)
+    {
+        $this->authorize('create', Report::class);
+
+        $report = DB::transaction(function () use ($request) {
+            $routineId = (int) $request->routine_id;
+
+            // Crea el reporte del usuario autenticado
+            $report = Report::create([
+                'user_id'    => $request->user()->id,
+                'routine_id' => $routineId,
+            ]);
+
+            // Crear items (si llegan)
+            $items = collect($request->input('items', []))
+                ->map(function ($i) use ($routineId) {
+                    // Asegura que el ejercicio pertenece a la rutina
+                    $this->ensureExerciseBelongsToRoutine((int) $i['routine_exercise_id'], $routineId);
+
+                    return [
+                        'routine_exercise_id' => (int) $i['routine_exercise_id'],
+                        'difficulty'          => array_key_exists('difficulty', $i)
+                            ? ($i['difficulty'] !== null ? (int) $i['difficulty'] : null)
+                            : null,
+                        'metric'              => $i['metric'] ?? null,
+                        'completed'           => isset($i['completed']) ? (bool) $i['completed'] : false,
+                    ];
+                })
+                ->all();
+
+            if (!empty($items)) {
+                $report->items()->createMany($items);
+            }
+
+            return $report;
+        });
+
+        // Cargar relaciones para el detail resource
+        $report->load([
+            'routine:id,name,sport,owner_user_id,rating_avg,exercises_count',
+            'items.routineExercise:id,routine_id,name,position',
+        ]);
+
+        return (new ReportDetailResource($report))
+            ->response()
+            ->setStatusCode(201);
+    }
+
+    /**
+     * GET /reports/{report}
+     * Ver detalle de un reporte con sus items.
+     */
+    public function show(Report $report)
+    {
+        $this->authorize('view', $report);
+
+        $report->load([
+            'routine:id,name,sport,owner_user_id,rating_avg,exercises_count',
+            'items.routineExercise:id,routine_id,name,position',
+        ]);
+
+        return new ReportDetailResource($report);
+    }
+
+    /**
+     * PUT /reports/{report}
+     * Actualiza items (upsert + delete). No permite cambiar routine_id.
+     */
+    public function update(UpdateReportRequest $request, Report $report)
+    {
+        $this->authorize('update', $report);
+
+        DB::transaction(function () use ($request, $report) {
+            $routineId = $report->routine_id;
+
+            // Borrado de items
+            $deleteIds = (array) $request->input('delete_item_ids', []);
+            if (!empty($deleteIds)) {
+                ReportExercise::where('report_id', $report->id)
+                    ->whereIn('id', $deleteIds)
+                    ->delete();
+            }
+
+            // Upsert de items
+            foreach ((array) $request->input('items', []) as $item) {
+                // Construimos solo los campos presentes para no sobreescribir con nulls
+                $data = [];
+
+                if (array_key_exists('difficulty', $item)) {
+                    $data['difficulty'] = $item['difficulty'] !== null ? (int) $item['difficulty'] : null;
+                }
+                if (array_key_exists('metric', $item)) {
+                    $data['metric'] = $item['metric'] ?? null;
+                }
+                if (array_key_exists('completed', $item)) {
+                    $data['completed'] = (bool) $item['completed'];
+                }
+
+                if (isset($item['id'])) {
+                    // Update existente
+                    $existing = ReportExercise::where('report_id', $report->id)
+                        ->where('id', (int) $item['id'])
+                        ->first();
+
+                    if ($existing) {
+                        if (isset($item['routine_exercise_id'])) {
+                            $this->ensureExerciseBelongsToRoutine((int) $item['routine_exercise_id'], $routineId);
+                            $existing->routine_exercise_id = (int) $item['routine_exercise_id'];
+                        }
+
+                        // Solo setear los campos que llegaron en la request
+                        foreach ($data as $k => $v) {
+                            $existing->{$k} = $v;
+                        }
+
+                        $existing->save();
+                    }
+                } else {
+                    // Create nuevo
+                    if (!isset($item['routine_exercise_id'])) {
+                        continue;
+                    }
+                    $this->ensureExerciseBelongsToRoutine((int) $item['routine_exercise_id'], $routineId);
+
+                    $report->items()->create(array_merge([
+                        'routine_exercise_id' => (int) $item['routine_exercise_id'],
+                    ], $data + [
+                        // Defaults si no vinieron en $data
+                        'difficulty' => $data['difficulty'] ?? null,
+                        'metric'     => $data['metric'] ?? null,
+                        'completed'  => $data['completed'] ?? false,
+                    ]));
+                }
+            }
+        });
+
+        $report->load([
+            'routine:id,name,sport,owner_user_id,rating_avg,exercises_count',
+            'items.routineExercise:id,routine_id,name,position',
+        ]);
+
+        return new ReportDetailResource($report);
+    }
+
+    /**
+     * DELETE /reports/{report}
+     */
+    public function destroy(Report $report)
+    {
+        $this->authorize('delete', $report);
+        $report->delete();
+        return response()->noContent();
+    }
+
+    /* =================== Dashboard helpers =================== */
+
+    /**
+     * GET /reports/calendar?year=YYYY&month=MM
+     * Devuelve [{date:'YYYY-MM-DD', count:int}, ...] con días del mes con reportes.
+     */
+    public function calendar(Request $request)
+    {
+        $this->authorize('viewAny', Report::class);
+
+        $year  = (int) $request->input('year', now()->year);
+        $month = (int) $request->input('month', now()->month);
+
+        $from = Carbon::create($year, $month, 1)->startOfDay();
+        $to   = (clone $from)->endOfMonth()->endOfDay();
+
+        $rows = Report::query()
+            ->forUser($request->user()->id)
+            ->whereBetween('created_at', [$from, $to])
+            ->selectRaw("DATE(created_at) as d, COUNT(*) as c")
+            ->groupBy('d')
+            ->orderBy('d')
+            ->get()
+            ->map(fn($r) => ['date' => $r->d, 'count' => (int) $r->c]);
+
+        return response()->json($rows);
+    }
+
+    /**
+     * GET /reports/recent-routines?limit=5
+     * Últimas rutinas distintas realizadas por mí (ordenadas por fecha de último reporte).
+     */
+    public function recentRoutines(Request $request)
+    {
+        $this->authorize('viewAny', Report::class);
+
+        $limit  = max(1, (int) $request->input('limit', 5));
+        $userId = $request->user()->id;
+
+        $routineIds = Report::query()
+            ->forUser($userId)
+            ->select('routine_id', DB::raw('MAX(created_at) as last_used'))
+            ->groupBy('routine_id')
+            ->orderByDesc('last_used')
+            ->limit($limit)
+            ->pluck('routine_id');
+
+        $routines = Routine::query()
+            ->with('owner:id,name')
+            ->whereIn('id', $routineIds)
+            ->select('id','name','sport','owner_user_id','rating_avg','exercises_count')
+            ->get();
+
+        // Ordenar según el order de $routineIds
+        $sorted = $routineIds->map(
+            fn($id) => $routines->firstWhere('id', $id)
+        )->filter()->values();
+
+        return RoutineResource::collection($sorted);
+    }
+
+    /**
+     * GET /reports/recent?limit=5
+     * Últimos reportes del usuario autenticado (resumen).
+     */
+    public function recent(Request $request)
+    {
+        $this->authorize('viewAny', Report::class);
+
+        $limit = max(1, (int) $request->input('limit', 5));
+
+        $rows = Report::query()
+            ->forUser($request->user()->id)
+            ->with([
+                'routine:id,name,sport,owner_user_id,rating_avg,exercises_count',
+                'items.routineExercise:id,routine_id,name,position',
+            ])
+            ->orderByDesc('created_at')
+            ->limit($limit)
+            ->get();
+
+        return ReportResource::collection($rows);
+    }
+
+    /**
+     * GET /reports/sport-breakdown?from=YYYY-MM-DD&to=YYYY-MM-DD
+     * Conteo de reportes por deporte (según rutina del reporte).
+     */
+    public function sportBreakdown(Request $request)
+    {
+        $this->authorize('viewAny', Report::class);
+
+        $userId = $request->user()->id;
+
+        $qb = Report::query()
+            ->forUser($userId)
+            ->join('routines', 'routines.id', '=', 'reports.routine_id')
+            ->select('routines.sport', DB::raw('COUNT(*) as c'))
+            ->groupBy('routines.sport');
+
+        if ($request->filled('from') && $request->filled('to')) {
+            $from = Carbon::parse($request->input('from'))->startOfDay();
+            $to   = Carbon::parse($request->input('to'))->endOfDay();
+            $qb->whereBetween('reports.created_at', [$from, $to]);
+        }
+
+        $rows = $qb->get()->map(fn($r) => [
+            'sport' => $r->sport,
+            'label' => method_exists(\App\Enums\Sport::class, 'from')
+                ? \App\Enums\Sport::from($r->sport)->label()
+                : $r->sport,
+            'count' => (int) $r->c,
+        ]);
+
+        return response()->json($rows);
+    }
+
+    /* =================== Helpers =================== */
+
+    /**
+     * Seguridad: verifica que el ejercicio pertenece a la rutina dada.
+     */
+    private function ensureExerciseBelongsToRoutine(int $routineExerciseId, int $routineId): void
+    {
+        $ok = RoutineExercise::where('id', $routineExerciseId)
+            ->where('routine_id', $routineId)
+            ->exists();
+
+        if (!$ok) {
+            abort(422, 'El ejercicio no pertenece a la rutina indicada.');
+        }
+    }
+}
