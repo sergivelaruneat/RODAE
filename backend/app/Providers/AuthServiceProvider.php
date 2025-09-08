@@ -8,7 +8,10 @@ use Illuminate\Auth\Notifications\VerifyEmail;
 use Illuminate\Support\Facades\Gate;
 
 use App\Models\Publication;
+use App\Models\Report;
+use App\Models\ReportExercise;
 use App\Policies\PublicationPolicy;
+use App\Policies\ReportExercisePolicy;
 
 class AuthServiceProvider extends ServiceProvider
 {
@@ -20,7 +23,9 @@ class AuthServiceProvider extends ServiceProvider
     protected $policies = [
         \App\Models\Publication::class => \App\Policies\PublicationPolicy::class,
         \App\Models\Routine::class => \App\Policies\RoutinePolicy::class,
-        \App\Models\UserRoutine::class => \App\Policies\UserRoutinePolicy::class
+        \App\Models\UserRoutine::class => \App\Policies\UserRoutinePolicy::class,
+        \App\Models\Report::class          => \App\Policies\ReportPolicy::class,
+        \App\Models\ReportExercise::class  => \App\Policies\ReportExercisePolicy::class,
     ];
 
     /**

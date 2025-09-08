@@ -11,6 +11,7 @@ use App\Http\Controllers\Api\RoutineController;
 use App\Http\Controllers\Api\UserRoutineController;
 use App\Http\Controllers\Api\UserController;
 use App\Http\Controllers\Api\FollowController;
+use App\Http\Controllers\Api\ReportController;
 use App\Models\User;
 
 /*
@@ -145,4 +146,17 @@ Route::middleware('auth:api')->group(function () {
     //ListarSeguidos
     Route::get('/users/{user}/following', [FollowController::class, 'following'])
     ->whereNumber('user');
+
+    // ---------------- Reportes ----------------
+    Route::get   ('/reports',                 [ReportController::class, 'index']);
+    Route::post  ('/reports',                 [ReportController::class, 'store']);
+    Route::get   ('/reports/{report}',        [ReportController::class, 'show'])->whereNumber('report');
+    Route::put   ('/reports/{report}',        [ReportController::class, 'update'])->whereNumber('report');
+    Route::delete('/reports/{report}',        [ReportController::class, 'destroy'])->whereNumber('report');
+
+    // Auxiliares dashboard
+    Route::get('/reports/calendar',           [ReportController::class, 'calendar']);
+    Route::get('/reports/recent-routines',    [ReportController::class, 'recentRoutines']);
+    Route::get('/reports/recent',             [ReportController::class, 'recent']);
+    Route::get('/reports/sport-breakdown',    [ReportController::class, 'sportBreakdown']);
 });
