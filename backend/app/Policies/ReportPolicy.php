@@ -4,47 +4,76 @@ namespace App\Policies;
 
 use App\Models\Report;
 use App\Models\User;
+use Illuminate\Support\Facades\DB;
 
 class ReportPolicy
 {
-    /** Listar (siempre filtrar por el propio usuario en el controller) */
+    /**
+     * Cualquiera autenticado puede usar los endpoints de listado/consulta
+     * (el filtro de user_id y la mutualidad se comprueban en el controller
+     * cuando corresponde). Mantener simple.
+     */
     public function viewAny(User $user): bool
     {
         return true;
     }
 
-    /** Ver un reporte concreto: solo el dueño */
+    /**
+     * Ver un reporte concreto:
+     * - dueñ@ del reporte
+     * - o entrenador con follow mutuo con el atleta dueño del reporte
+     */
     public function view(User $user, Report $report): bool
     {
-        return $report->user_id === $user->id;
+        if ($user->id === (int) $report->user_id) {
+            return true;
+        }
+
+        return $this->trainerHasMutualFollowWith($user, (int) $report->user_id);
     }
 
-    /** Crear: cualquier usuario autenticado puede crear su propio reporte */
+    /**
+     * Crear: cualquier usuario autenticado.
+     */
     public function create(User $user): bool
     {
         return true;
     }
 
-    /** Actualizar: solo el dueño */
+    /**
+     * Editar/borrar: únicamente el dueño del reporte.
+     */
     public function update(User $user, Report $report): bool
     {
-        return $report->user_id === $user->id;
+        return $user->id === (int) $report->user_id;
     }
 
-    /** Borrar: solo el dueño */
     public function delete(User $user, Report $report): bool
     {
-        return $report->user_id === $user->id;
+        return $user->id === (int) $report->user_id;
     }
 
-    /** No usamos soft deletes ⇒ false por defecto */
-    public function restore(User $user, Report $report): bool
+    /**
+     * Helper: ¿el usuario (trainer) y el atleta tienen follow mutuo?
+     */
+    private function trainerHasMutualFollowWith(User $maybeTrainer, int $athleteId): bool
     {
-        return false;
-    }
+        if ($maybeTrainer->role !== 'trainer') {
+            return false;
+        }
 
-    public function forceDelete(User $user, Report $report): bool
-    {
-        return false;
+        // trainer -> atleta
+        $a = DB::table('follows')
+            ->where('follower_id', $maybeTrainer->id)
+            ->where('followed_id', $athleteId)
+            ->exists();
+
+        // atleta -> trainer
+        $b = DB::table('follows')
+            ->where('follower_id', $athleteId)
+            ->where('followed_id', $maybeTrainer->id)
+            ->exists();
+
+        return $a && $b;
     }
 }

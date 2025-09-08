@@ -23,14 +23,15 @@ class ReportController extends Controller
 
     /**
      * GET /reports
-     * Lista paginada de mis reportes (usuario autenticado).
+     * Lista paginada de reportes (por defecto los míos).
      * Filtros opcionales: year, month, from, to.
      */
     public function index(Request $request)
     {
         $this->authorize('viewAny', Report::class);
 
-        $userId = $request->user()->id;
+        // ← permite ver los de otro usuario si hay follow mutuo
+        $userId = $this->resolveSubjectUserId($request);
         $per    = $request->integer('per_page', 15);
 
         $q = Report::query()
@@ -58,7 +59,7 @@ class ReportController extends Controller
 
     /**
      * POST /reports
-     * Crea un reporte con items (ejercicios ejecutados).
+     * Crea un reporte con items (ejercicios ejecutados) para el usuario autenticado.
      */
     public function store(StoreReportRequest $request)
     {
@@ -67,16 +68,13 @@ class ReportController extends Controller
         $report = DB::transaction(function () use ($request) {
             $routineId = (int) $request->routine_id;
 
-            // Crea el reporte del usuario autenticado
             $report = Report::create([
                 'user_id'    => $request->user()->id,
                 'routine_id' => $routineId,
             ]);
 
-            // Crear items (si llegan)
             $items = collect($request->input('items', []))
                 ->map(function ($i) use ($routineId) {
-                    // Asegura que el ejercicio pertenece a la rutina
                     $this->ensureExerciseBelongsToRoutine((int) $i['routine_exercise_id'], $routineId);
 
                     return [
@@ -97,7 +95,6 @@ class ReportController extends Controller
             return $report;
         });
 
-        // Cargar relaciones para el detail resource
         $report->load([
             'routine:id,name,sport,owner_user_id,rating_avg,exercises_count',
             'items.routineExercise:id,routine_id,name,position',
@@ -145,7 +142,6 @@ class ReportController extends Controller
 
             // Upsert de items
             foreach ((array) $request->input('items', []) as $item) {
-                // Construimos solo los campos presentes para no sobreescribir con nulls
                 $data = [];
 
                 if (array_key_exists('difficulty', $item)) {
@@ -159,7 +155,6 @@ class ReportController extends Controller
                 }
 
                 if (isset($item['id'])) {
-                    // Update existente
                     $existing = ReportExercise::where('report_id', $report->id)
                         ->where('id', (int) $item['id'])
                         ->first();
@@ -169,16 +164,12 @@ class ReportController extends Controller
                             $this->ensureExerciseBelongsToRoutine((int) $item['routine_exercise_id'], $routineId);
                             $existing->routine_exercise_id = (int) $item['routine_exercise_id'];
                         }
-
-                        // Solo setear los campos que llegaron en la request
                         foreach ($data as $k => $v) {
                             $existing->{$k} = $v;
                         }
-
                         $existing->save();
                     }
                 } else {
-                    // Create nuevo
                     if (!isset($item['routine_exercise_id'])) {
                         continue;
                     }
@@ -187,7 +178,6 @@ class ReportController extends Controller
                     $report->items()->create(array_merge([
                         'routine_exercise_id' => (int) $item['routine_exercise_id'],
                     ], $data + [
-                        // Defaults si no vinieron en $data
                         'difficulty' => $data['difficulty'] ?? null,
                         'metric'     => $data['metric'] ?? null,
                         'completed'  => $data['completed'] ?? false,
@@ -217,12 +207,14 @@ class ReportController extends Controller
     /* =================== Dashboard helpers =================== */
 
     /**
-     * GET /reports/calendar?year=YYYY&month=MM
+     * GET /reports/calendar?year=YYYY&month=MM[&user_id=N]
      * Devuelve [{date:'YYYY-MM-DD', count:int}, ...] con días del mes con reportes.
      */
     public function calendar(Request $request)
     {
         $this->authorize('viewAny', Report::class);
+
+        $userId = $this->resolveSubjectUserId($request);
 
         $year  = (int) $request->input('year', now()->year);
         $month = (int) $request->input('month', now()->month);
@@ -231,7 +223,7 @@ class ReportController extends Controller
         $to   = (clone $from)->endOfMonth()->endOfDay();
 
         $rows = Report::query()
-            ->forUser($request->user()->id)
+            ->forUser($userId)
             ->whereBetween('created_at', [$from, $to])
             ->selectRaw("DATE(created_at) as d, COUNT(*) as c")
             ->groupBy('d')
@@ -243,23 +235,26 @@ class ReportController extends Controller
     }
 
     /**
-     * GET /reports/recent-routines?limit=5
-     * Últimas rutinas distintas realizadas por mí (ordenadas por fecha de último reporte).
+     * GET /reports/recent-routines?limit=3[&user_id=N]
+     * Últimas rutinas distintas realizadas por el usuario consultado.
      */
     public function recentRoutines(Request $request)
     {
         $this->authorize('viewAny', Report::class);
 
-        $limit  = max(1, (int) $request->input('limit', 5));
-        $userId = $request->user()->id;
+        $limit  = max(1, (int) $request->input('limit', 3));
+        $userId = $this->resolveSubjectUserId($request);
+
+        // Si guardas performed_at, usa COALESCE(performed_at, created_at)
+        $orderCol = 'created_at';
 
         $routineIds = Report::query()
-            ->forUser($userId)
-            ->select('routine_id', DB::raw('MAX(created_at) as last_used'))
-            ->groupBy('routine_id')
-            ->orderByDesc('last_used')
-            ->limit($limit)
-            ->pluck('routine_id');
+            ->where('user_id', $userId)
+            ->orderByDesc($orderCol)
+            ->pluck('routine_id')
+            ->unique()
+            ->take($limit)
+            ->values();
 
         $routines = Routine::query()
             ->with('owner:id,name')
@@ -267,26 +262,26 @@ class ReportController extends Controller
             ->select('id','name','sport','owner_user_id','rating_avg','exercises_count')
             ->get();
 
-        // Ordenar según el order de $routineIds
-        $sorted = $routineIds->map(
-            fn($id) => $routines->firstWhere('id', $id)
-        )->filter()->values();
+        $sorted = $routineIds->map(fn($id) => $routines->firstWhere('id', $id))
+            ->filter()
+            ->values();
 
         return RoutineResource::collection($sorted);
     }
 
     /**
-     * GET /reports/recent?limit=5
-     * Últimos reportes del usuario autenticado (resumen).
+     * GET /reports/recent?limit=5[&user_id=N]
+     * Últimos reportes del usuario consultado (resumen).
      */
     public function recent(Request $request)
     {
         $this->authorize('viewAny', Report::class);
 
-        $limit = max(1, (int) $request->input('limit', 5));
+        $limit  = max(1, (int) $request->input('limit', 5));
+        $userId = $this->resolveSubjectUserId($request);
 
         $rows = Report::query()
-            ->forUser($request->user()->id)
+            ->forUser($userId)
             ->with([
                 'routine:id,name,sport,owner_user_id,rating_avg,exercises_count',
                 'items.routineExercise:id,routine_id,name,position',
@@ -299,14 +294,14 @@ class ReportController extends Controller
     }
 
     /**
-     * GET /reports/sport-breakdown?from=YYYY-MM-DD&to=YYYY-MM-DD
+     * GET /reports/sport-breakdown[?from=YYYY-MM-DD&to=YYYY-MM-DD][&user_id=N]
      * Conteo de reportes por deporte (según rutina del reporte).
      */
     public function sportBreakdown(Request $request)
     {
         $this->authorize('viewAny', Report::class);
 
-        $userId = $request->user()->id;
+        $userId = $this->resolveSubjectUserId($request);
 
         $qb = Report::query()
             ->forUser($userId)
@@ -332,6 +327,43 @@ class ReportController extends Controller
     }
 
     /* =================== Helpers =================== */
+
+    /**
+     * Resuelve el usuario “sujeto” de la consulta:
+     * - Si llega ?user_id y hay follow mutuo → devuelve ese id.
+     * - En otro caso → id del autenticado.
+     */
+    private function resolveSubjectUserId(Request $request): int
+    {
+        $authId   = (int) $request->user()->id;
+        $targetId = (int) $request->query('user_id', 0);
+
+        if ($targetId && $targetId !== $authId) {
+            if ($this->hasMutualFollow($authId, $targetId)) {
+                return $targetId;
+            }
+        }
+        return $authId;
+    }
+
+    /**
+     * Comprueba follow mutuo usando tu tabla `follows`
+     * (follower_id ↔ followed_id).
+     */
+    private function hasMutualFollow(int $a, int $b): bool
+    {
+        $aFollowsB = DB::table('follows')
+            ->where('follower_id', $a)
+            ->where('followed_id', $b)
+            ->exists();
+
+        $bFollowsA = DB::table('follows')
+            ->where('follower_id', $b)
+            ->where('followed_id', $a)
+            ->exists();
+
+        return $aFollowsB && $bFollowsA;
+    }
 
     /**
      * Seguridad: verifica que el ejercicio pertenece a la rutina dada.
