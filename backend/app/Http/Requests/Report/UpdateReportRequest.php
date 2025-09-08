@@ -7,16 +7,17 @@ use Illuminate\Validation\Rule;
 
 class UpdateReportRequest extends FormRequest
 {
-    // La policy se aplica en el controller -> $this->authorize('update', $report)
     public function authorize(): bool
     {
+        // La policy se aplica en el controller (update)
         return true;
     }
 
     protected function prepareForValidation(): void
     {
         $items = (array) $this->input('items', []);
-        $norm  = array_map(function ($i) {
+
+        $norm = array_map(function ($i) {
             if (isset($i['id'])) {
                 $i['id'] = (int) $i['id'];
             }
@@ -24,18 +25,19 @@ class UpdateReportRequest extends FormRequest
                 $i['routine_exercise_id'] = (int) $i['routine_exercise_id'];
             }
 
-            // Casts
-            if (array_key_exists('difficulty', $i) && $i['difficulty'] !== null && $i['difficulty'] !== '') {
-                $i['difficulty'] = (int) $i['difficulty'];
-            } else {
-                $i['difficulty'] = null; // permite null
+            // ⚠️ Solo castear 'difficulty' si el campo viene presente
+            if (array_key_exists('difficulty', $i)) {
+                $i['difficulty'] = ($i['difficulty'] === '' || $i['difficulty'] === null)
+                    ? null
+                    : (int) $i['difficulty'];
             }
-
-            if (isset($i['completed'])) {
+            // ⚠️ Solo castear 'completed' si el campo viene presente
+            if (array_key_exists('completed', $i)) {
+                // BOOL y BOOLEAN son equivalentes; uso BOOL por brevedad
                 $i['completed'] = filter_var($i['completed'], FILTER_VALIDATE_BOOL);
             }
 
-            // No tocamos 'metric' (llega tal cual)
+            // 'metric' no se toca: puede venir string o null
             return $i;
         }, $items);
 
@@ -49,30 +51,31 @@ class UpdateReportRequest extends FormRequest
 
     public function rules(): array
     {
-        $report    = $this->route('report'); // model bind
+        $report    = $this->route('report'); // model binding
         $reportId  = $report?->id ?? 0;
         $routineId = $report?->routine_id ?? 0;
 
         return [
-            // Upsert de items (opcional)
-            'items' => ['sometimes','array','min:1'],
+            // Upsert opcional
+            'items'   => ['sometimes','array','min:1'],
+            'items.*' => ['sometimes','array'],
 
-            // Si viene id => actualizar; si NO viene id => crear
+            // Si viene id → actualizar; si no → crear
             'items.*.id' => [
                 'sometimes','integer',
-                Rule::exists('report_exercises','id')
+                Rule::exists('report_exercises', 'id')
                     ->where(fn ($q) => $q->where('report_id', $reportId)),
             ],
 
-            // Para items nuevos (sin id) es requerido; para existentes puede venir si cambias el vínculo
+            // Para items nuevos es requerido; para existentes puede venir para mover el vínculo
             'items.*.routine_exercise_id' => [
-                'required_without:items.*.id',
+                'required_without:items.*.id',   // ← ruta completa del hermano
                 'sometimes','integer',
-                Rule::exists('routine_exercises','id')
+                Rule::exists('routine_exercises', 'id')
                     ->where(fn ($q) => $q->where('routine_id', $routineId)),
             ],
 
-            'items.*.difficulty' => ['nullable','integer','min:1','max:10'], // ajusta si permites 0
+            'items.*.difficulty' => ['nullable','integer','min:1','max:10'],
             'items.*.metric'     => ['nullable','string','max:255'],
             'items.*.completed'  => ['sometimes','boolean'],
 
@@ -80,7 +83,7 @@ class UpdateReportRequest extends FormRequest
             'delete_item_ids'   => ['sometimes','array'],
             'delete_item_ids.*' => [
                 'integer',
-                Rule::exists('report_exercises','id')
+                Rule::exists('report_exercises', 'id')
                     ->where(fn ($q) => $q->where('report_id', $reportId)),
             ],
         ];

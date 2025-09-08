@@ -30,7 +30,6 @@ class ReportController extends Controller
     {
         $this->authorize('viewAny', Report::class);
 
-        // ← permite ver los de otro usuario si hay follow mutuo
         $userId = $this->resolveSubjectUserId($request);
         $per    = $request->integer('per_page', 15);
 
@@ -41,7 +40,6 @@ class ReportController extends Controller
             ->forUser($userId)
             ->orderByDesc('created_at');
 
-        // Rango de fechas
         if ($request->filled('from') && $request->filled('to')) {
             $from = Carbon::parse($request->input('from'))->startOfDay();
             $to   = Carbon::parse($request->input('to'))->endOfDay();
@@ -73,17 +71,32 @@ class ReportController extends Controller
                 'routine_id' => $routineId,
             ]);
 
+            // Construcción de items con SNAPSHOT desde routine_exercises (sin relaciones extra)
             $items = collect($request->input('items', []))
                 ->map(function ($i) use ($routineId) {
-                    $this->ensureExerciseBelongsToRoutine((int) $i['routine_exercise_id'], $routineId);
+
+                    $rid = (int) $i['routine_exercise_id'];
+                    $this->ensureExerciseBelongsToRoutine($rid, $routineId);
+
+                    // Cargamos SOLO las columnas propias
+                    $re = RoutineExercise::select('id','name','rest','series_reps','position')
+                        ->findOrFail($rid);
 
                     return [
-                        'routine_exercise_id' => (int) $i['routine_exercise_id'],
-                        'difficulty'          => array_key_exists('difficulty', $i)
-                            ? ($i['difficulty'] !== null ? (int) $i['difficulty'] : null)
-                            : null,
-                        'metric'              => $i['metric'] ?? null,
-                        'completed'           => isset($i['completed']) ? (bool) $i['completed'] : false,
+                        'routine_exercise_id' => $rid,
+
+                        // --- snapshot desde la rutina ---
+                        'exercise_name' => $re->name,
+                        'rest'          => $re->rest,
+                        'series_reps'   => $re->series_reps,
+                        'position'      => (int) ($re->position ?? 0),
+
+                        // --- datos que introduce el usuario ---
+                        'difficulty'    => array_key_exists('difficulty', $i)
+                                            ? ($i['difficulty'] !== null ? (int) $i['difficulty'] : null)
+                                            : null,
+                        'metric'        => $i['metric'] ?? null,
+                        'completed'     => isset($i['completed']) ? (bool) $i['completed'] : false,
                     ];
                 })
                 ->all();
@@ -155,29 +168,56 @@ class ReportController extends Controller
                 }
 
                 if (isset($item['id'])) {
+                    // Update existente
                     $existing = ReportExercise::where('report_id', $report->id)
                         ->where('id', (int) $item['id'])
                         ->first();
 
                     if ($existing) {
+                        // Si cambian de routine_exercise → refrescamos snapshot
                         if (isset($item['routine_exercise_id'])) {
-                            $this->ensureExerciseBelongsToRoutine((int) $item['routine_exercise_id'], $routineId);
-                            $existing->routine_exercise_id = (int) $item['routine_exercise_id'];
+                            $rid = (int) $item['routine_exercise_id'];
+                            $this->ensureExerciseBelongsToRoutine($rid, $routineId);
+
+                            $re = RoutineExercise::select('id','name','rest','series_reps','position')
+                                ->findOrFail($rid);
+
+                            $existing->routine_exercise_id = $rid;
+                            $existing->exercise_name       = $re->name;
+                            $existing->rest                = $re->rest;
+                            $existing->series_reps         = $re->series_reps;
+                            $existing->position            = (int) ($re->position ?? 0);
                         }
+
+                        // Solo los campos enviados
                         foreach ($data as $k => $v) {
                             $existing->{$k} = $v;
                         }
+
                         $existing->save();
                     }
                 } else {
+                    // Create nuevo
                     if (!isset($item['routine_exercise_id'])) {
                         continue;
                     }
-                    $this->ensureExerciseBelongsToRoutine((int) $item['routine_exercise_id'], $routineId);
+
+                    $rid = (int) $item['routine_exercise_id'];
+                    $this->ensureExerciseBelongsToRoutine($rid, $routineId);
+
+                    $re = RoutineExercise::select('id','name','rest','series_reps','position')
+                        ->findOrFail($rid);
 
                     $report->items()->create(array_merge([
-                        'routine_exercise_id' => (int) $item['routine_exercise_id'],
+                        'routine_exercise_id' => $rid,
+
+                        // snapshot
+                        'exercise_name' => $re->name,
+                        'rest'          => $re->rest,
+                        'series_reps'   => $re->series_reps,
+                        'position'      => (int) ($re->position ?? 0),
                     ], $data + [
+                        // defaults si no vinieron en $data
                         'difficulty' => $data['difficulty'] ?? null,
                         'metric'     => $data['metric'] ?? null,
                         'completed'  => $data['completed'] ?? false,
@@ -208,7 +248,6 @@ class ReportController extends Controller
 
     /**
      * GET /reports/calendar?year=YYYY&month=MM[&user_id=N]
-     * Devuelve [{date:'YYYY-MM-DD', count:int}, ...] con días del mes con reportes.
      */
     public function calendar(Request $request)
     {
@@ -225,7 +264,7 @@ class ReportController extends Controller
         $rows = Report::query()
             ->forUser($userId)
             ->whereBetween('created_at', [$from, $to])
-            ->selectRaw("DATE(created_at) as d, COUNT(*) as c")
+            ->selectRaw('DATE(created_at) as d, COUNT(*) as c')
             ->groupBy('d')
             ->orderBy('d')
             ->get()
@@ -236,7 +275,6 @@ class ReportController extends Controller
 
     /**
      * GET /reports/recent-routines?limit=3[&user_id=N]
-     * Últimas rutinas distintas realizadas por el usuario consultado.
      */
     public function recentRoutines(Request $request)
     {
@@ -245,7 +283,6 @@ class ReportController extends Controller
         $limit  = max(1, (int) $request->input('limit', 3));
         $userId = $this->resolveSubjectUserId($request);
 
-        // Si guardas performed_at, usa COALESCE(performed_at, created_at)
         $orderCol = 'created_at';
 
         $routineIds = Report::query()
@@ -271,7 +308,6 @@ class ReportController extends Controller
 
     /**
      * GET /reports/recent?limit=5[&user_id=N]
-     * Últimos reportes del usuario consultado (resumen).
      */
     public function recent(Request $request)
     {
@@ -295,7 +331,6 @@ class ReportController extends Controller
 
     /**
      * GET /reports/sport-breakdown[?from=YYYY-MM-DD&to=YYYY-MM-DD][&user_id=N]
-     * Conteo de reportes por deporte (según rutina del reporte).
      */
     public function sportBreakdown(Request $request)
     {
@@ -347,8 +382,7 @@ class ReportController extends Controller
     }
 
     /**
-     * Comprueba follow mutuo usando tu tabla `follows`
-     * (follower_id ↔ followed_id).
+     * Comprueba follow mutuo en tabla `follows` (follower_id ↔ followed_id).
      */
     private function hasMutualFollow(int $a, int $b): bool
     {

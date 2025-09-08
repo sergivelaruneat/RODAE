@@ -13,6 +13,14 @@ class ReportExercise extends Model
     protected $fillable = [
         'report_id',
         'routine_exercise_id',
+
+        // ---- SNAPSHOT desde la rutina en el momento de crear el reporte ----
+        'exercise_name',
+        'rest',
+        'series_reps',
+        'position',
+
+        // ---- Datos introducidos por el usuario en el reporte ----
         'difficulty',
         'metric',
         'completed',
@@ -20,10 +28,14 @@ class ReportExercise extends Model
 
     protected $casts = [
         'difficulty' => 'integer',
+        'position'   => 'integer',
         'completed'  => 'boolean',
     ];
 
+    // Al tocar un item, se “toca” también el updated_at del Report
     protected $touches = ['report'];
+
+    /* ================= Relaciones ================= */
 
     public function report(): BelongsTo
     {
@@ -34,4 +46,11 @@ class ReportExercise extends Model
     {
         return $this->belongsTo(RoutineExercise::class, 'routine_exercise_id');
     }
+
+    /* (Opcional) scope para listarlos en el orden guardado */
+    public function scopeOrdered($query)
+    {
+        return $query->orderBy('position')->orderBy('id');
+    }
 }
+

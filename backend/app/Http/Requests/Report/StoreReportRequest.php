@@ -7,32 +7,37 @@ use Illuminate\Validation\Rule;
 
 class StoreReportRequest extends FormRequest
 {
-    // La policy se aplica en el controller -> $this->authorize('create', Report::class)
     public function authorize(): bool
     {
+        // La policy se aplica en el controller (create)
         return true;
     }
 
     protected function prepareForValidation(): void
     {
-        // Normaliza items (casts básicos)
         $items = (array) $this->input('items', []);
-        $norm  = array_map(function ($i) {
+
+        $norm = array_map(function ($i) {
+            // Casts básicos y normalización
             if (isset($i['routine_exercise_id'])) {
                 $i['routine_exercise_id'] = (int) $i['routine_exercise_id'];
             }
 
-            if (array_key_exists('difficulty', $i) && $i['difficulty'] !== null && $i['difficulty'] !== '') {
-                $i['difficulty'] = (int) $i['difficulty'];
-            } else {
-                $i['difficulty'] = null;
+            // Solo castear si VIENE presente
+            if (array_key_exists('difficulty', $i)) {
+                $i['difficulty'] = ($i['difficulty'] === '' || $i['difficulty'] === null)
+                    ? null
+                    : (int) $i['difficulty'];
             }
 
-            if (isset($i['completed'])) {
+            if (array_key_exists('completed', $i)) {
                 $i['completed'] = filter_var($i['completed'], FILTER_VALIDATE_BOOL);
             }
 
-            // No tocamos 'metric' (ya llega como string/null)
+            if (array_key_exists('metric', $i) && is_string($i['metric'])) {
+                $i['metric'] = trim($i['metric']);
+            }
+
             return $i;
         }, $items);
 
@@ -47,19 +52,19 @@ class StoreReportRequest extends FormRequest
         return [
             'routine_id' => ['required','integer','exists:routines,id'],
 
-            'items' => ['required','array','min:1'],
+            'items'   => ['required','array','min:1'],
+            'items.*' => ['required','array'],
 
             'items.*.routine_exercise_id' => [
-                'required','integer',
-                // Debe existir y pertenecer a la rutina seleccionada
+                'required','integer','distinct',
+                // Debe existir y pertenecer a la rutina indicada
                 Rule::exists('routine_exercises','id')
                     ->where(fn ($q) => $q->where('routine_id', (int) $this->input('routine_id')))
             ],
 
-            'items.*.difficulty' => ['nullable','integer','min:1','max:10'], // ajusta si permites 0
+            'items.*.difficulty' => ['nullable','integer','min:1','max:10'],
             'items.*.metric'     => ['nullable','string','max:255'],
             'items.*.completed'  => ['sometimes','boolean'],
         ];
     }
 }
-
