@@ -68,9 +68,7 @@ Se diferencian dos perfiles principales:
 
 ## 7. Esquema Entidad-Relación
 El diseño de la base de datos recoge las entidades del dominio y sus relaciones:  
-- Relaciones usuario–rutina  
-- Relación publicaciones–comentarios  
-- Relación reportes–ejercicios  
+ 
 
 ![Diagrama entidad-relación](misc/diagramaEntidadRelacion.png)
 
