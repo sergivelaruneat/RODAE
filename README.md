@@ -38,16 +38,16 @@ Aquí nace la semilla de **RODAE**. Esta aplicación tiene como base los siguien
 ### Objetivos
 
 
-![Diapositiva de objetivos](misc\objetivos.png)
+![Diapositiva de objetivos](misc/objetivos.png)
 
 ### Tecnologías utilizadas
-![Diapositiva de objetivos](misc\instrumentos.png)
+![Diapositiva de tecnologias](misc/instrumentos.png)
 ---
 
 ## 5. Modelo de dominio
 Incluye entidades principales como: **Usuario, Perfil, Rutina, Ejercicio, Reporte, Publicación, Comentario**.  
 
-![Diapositiva de dominio](misc\ModeloDominioLimpio.png)
+![Diapositiva de dominio](misc/ModeloDominioLimpio.png)
 
 ---
 
@@ -72,7 +72,7 @@ El diseño de la base de datos recoge las entidades del dominio y sus relaciones
 - Relación publicaciones–comentarios  
 - Relación reportes–ejercicios  
 
-![Diagrama entidad-relación](misc\diagramaEntidadRelacion.png)
+![Diagrama entidad-relación](misc/diagramaEntidadRelacion.png)
 
 ---
 
