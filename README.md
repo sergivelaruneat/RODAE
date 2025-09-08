@@ -47,16 +47,22 @@ Aquí nace la semilla de **RODAE**. Esta aplicación tiene como base los siguien
 ## 5. Modelo de dominio
 Incluye entidades principales como: **Usuario, Perfil, Rutina, Ejercicio, Reporte, Publicación, Comentario**.  
 
-
+![Diapositiva de dominio](misc\ModeloDominioLimpio.png)
 
 ---
 
 ## 6. Casos de uso
+Caso de uso **authentication**
+
+![Casos de uso](misc/CasoUsoLogin.png)
+
 Se diferencian dos perfiles principales:  
 - **Usuario Atleta**: seguir rutinas, registrar reportes, compartir publicaciones.  
 - **Usuario Entrenador**: crear y asignar rutinas, gestionar atletas, dar feedback.
 
-![Casos de uso](images/casos-uso.png)
+
+![Casos de uso](misc/CasoUsoAtleta.png)
+![Casos de uso](misc/CasoUsoEntrenador.png)
 
 ---
 
@@ -66,7 +72,7 @@ El diseño de la base de datos recoge las entidades del dominio y sus relaciones
 - Relación publicaciones–comentarios  
 - Relación reportes–ejercicios  
 
-![Diagrama entidad-relación](images/er-diagrama.png)
+![Diagrama entidad-relación](misc\diagramaEntidadRelacion.png)
 
 ---
 
@@ -75,6 +81,6 @@ Ejemplo: **Crear reporte de entrenamiento**
 - El atleta selecciona su rutina, marca los ejercicios completados, añade observaciones y guarda el progreso.  
 - El reporte queda visible tanto para el atleta como para el entrenador.  
 
-👉 **Demostración en vivo:** [Aplicación RODAE](https://github.com/sergivelaruneat/RODAE)
+👉 **Demostración en vivo:** [Aplicación RODAE](https://d85ag4khyjpni.cloudfront.net/login)
 
 ---
