@@ -28,6 +28,8 @@ const routes = [
   { path: '/reports/create/:routineId',    name: 'ReportCreate',    component: () => import('@/views/ReportView.vue'), meta:{ requiresAuth:true }},
   { path: '/reports/:id',    name: 'ReportView',    component: () => import('@/views/ReportView.vue'),  meta:{ requiresAuth:true }},
   { path: '/reports/:id/edit',    name: 'ReportEdit',    component: () => import('@/views/ReportView.vue'),  meta:{ requiresAuth:true }},
+  // Ver progreso de otro usuario
+  { path: '/progress/:userId',  name: 'ProgressUser', component: () => import('@/views/ProgressView.vue'), meta:{ requiresAuth:true }},
 
   // Buscador de usuarios
   { path: '/users/search',   name: 'UsersSearch',    component: () => import('@/views/UsersSearchView.vue'),  meta:{ requiresAuth:true }},

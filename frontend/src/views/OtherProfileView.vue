@@ -20,8 +20,14 @@
             <div class="flex-1">
               <div class="flex items-center justify-between">
                 <h2 class="text-2xl font-bold">{{ profile.name }}</h2>
-
                 <div class="flex gap-2">
+                  <button
+                    v-if="canSeeProgress"
+                    @click="goProgress"
+                    class="px-3 py-1.5 text-sm font-semibold text-white rounded bg-gradient-to-r from-blue-900 to-blue-500 hover:opacity-90"
+                  >
+                    Ver progreso
+                  </button>
                   <!-- Asignar rutina: solo si soy trainer y hay follow mutuo -->
                   <button
                     v-if="showAssignButton"
@@ -268,14 +274,32 @@ const myCreatedLoading = ref(false)
 
 // helpers
 const roleLabel = computed(() => (profile.value?.role === 'trainer' ? 'Entrenador' : 'Atleta'))
+
+// Botón asignar rutina (trainer + follow mutuo)
 const showAssignButton = computed(() =>
   currentUser.value?.role === 'trainer' &&
   relationship.value.follows &&
   relationship.value.followed_by
 )
 
-watch(() => route.params.user, () => cargarVista())
+/* ===== Botón "Ver progreso" (trainer + follow mutuo + no es mi perfil) ===== */
+const isTrainer = computed(() => currentUser.value?.role === 'trainer')
+const isMutual  = computed(() => relationship.value.follows && relationship.value.followed_by)
+const notMyself = computed(() => {
+  const me = currentUser.value?.id
+  const other = profile.value?.id
+  return me && other && me !== other
+})
+const canSeeProgress = computed(() => isTrainer.value && isMutual.value && notMyself.value)
 
+function goProgress () {
+  // Usa la ruta nombrada si la tienes:
+  // router.push({ name: 'ProgressUser', params: { userId: profile.value.id }, query: { name: profile.value.name } })
+  // Fallback robusto por path:
+  router.push({ path: `/progress/${profile.value.id}`, query: { name: profile.value.name } })
+}
+
+watch(() => route.params.user, () => cargarVista())
 onMounted(cargarVista)
 
 async function cargarVista () {
@@ -310,13 +334,12 @@ async function loadRelationship (userId) {
   }
 }
 
-/* ====== Publicaciones (usar PublicationFeed como en ProfileView) ====== */
+/* ====== Publicaciones ====== */
 async function cargarPublicaciones (userId, page = 1) {
   try {
     pubsLoading.value = true
     const resp = await getUserPublications(userId, page)
     const items = Array.isArray(resp?.data) ? resp.data : (Array.isArray(resp) ? resp : [])
-
     publicaciones.value = items.map(mapToFeedItem)
   } finally {
     pubsLoading.value = false
@@ -414,7 +437,6 @@ async function assign (routineId) {
   try {
     await assignRoutine(routineId, profile.value.id)
     assignOpen.value = false
-    // refrescamos el tab de rutinas seguidas del atleta
     if (tabActiva.value === 'rutinas') await fetchRoutines()
   } catch (e) {
     console.error(e)

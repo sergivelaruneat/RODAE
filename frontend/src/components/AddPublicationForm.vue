@@ -52,11 +52,17 @@
 
         <select v-model="deporte" class="w-full mb-4 px-4 py-2 border rounded">
           <option disabled value="">Selecciona un deporte</option>
+          <option>Ciclismo</option>
+          <option>Natación</option>
+          <option>Jogging</option>
+          <option>Correr</option>
+          <option>Trail Running</option>
+          <option>Atletismo</option>
           <option>Powerlifting</option>
+          <option>Musculación</option>
           <option>CrossFit</option>
-          <option>Fitness</option>
-          <option>Bodybuilding</option>
-          <option>Senderismo</option>
+          <option>Escalada</option>
+          <option>Calistenia</option>
         </select>
 
         <button

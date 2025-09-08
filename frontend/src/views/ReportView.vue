@@ -11,9 +11,9 @@
           {{ routineName }}
         </h2>
 
-        <!-- Botón Editar solo en modo ver -->
+        <!-- Botón Editar solo en modo ver y si soy dueño del reporte -->
         <button
-          v-if="mode === 'view'"
+          v-if="mode === 'view' && isOwner"
           @click="toEditMode"
           class="px-4 py-2 text-sm font-semibold text-white rounded bg-gradient-to-r from-blue-900 to-blue-500 hover:opacity-90 shadow"
         >
@@ -167,6 +167,12 @@ const rows = reactive([])
 const loading = ref(true)
 const saving = ref(false)
 
+// usuario actual
+const currentUser = ref(null)
+try { currentUser.value = JSON.parse(localStorage.getItem('user') || 'null') } catch { currentUser.value = null }
+// ¿soy el dueño del reporte?
+const isOwner = computed(() => !!(report.value && currentUser.value && report.value.user_id === currentUser.value.id))
+
 /* ----------------- cabecera ----------------- */
 const routineName = computed(() =>
   mode.value === 'create'
@@ -193,7 +199,6 @@ function buildRowsFromReport(data) {
       id: it.id ?? null,
       routine_exercise_id: ex.id,
       name: ex.name || '—',
-      // En ver/editar, si el back no trae rest/series_reps en la relación, mostramos '—'
       restText: restText(ex.rest),
       seriesReps: seriesRepsText(ex.series_reps),
       difficulty: it.difficulty ?? 1,
@@ -208,7 +213,6 @@ function buildRowsFromRoutine(rutina) {
 
   let list = []
 
-  // A) rutina.routine_exercises: [{ id, position, rest, series_reps, exercise:{name} }, ...]
   if (Array.isArray(rutina?.routine_exercises)) {
     list = rutina.routine_exercises.map(re => ({
       id: re.id,
@@ -217,9 +221,7 @@ function buildRowsFromRoutine(rutina) {
       rest: re.rest,
       series_reps: re.series_reps,
     }))
-  }
-  // B) rutina.exercises ya aplanados: [{ id, name, rest, series_reps, pivot?:{ id, position } }, ...]
-  else if (Array.isArray(rutina?.exercises)) {
+  } else if (Array.isArray(rutina?.exercises)) {
     list = rutina.exercises.map(e => ({
       id: e?.pivot?.id ?? e.routine_exercise_id ?? e.id,
       position: e?.pivot?.position ?? e.position,
@@ -238,7 +240,7 @@ function buildRowsFromRoutine(rutina) {
       name: re.name || 'Ejercicio',
       restText: restText(re.rest),
       seriesReps: seriesRepsText(re.series_reps),
-      difficulty: 1,    // por defecto
+      difficulty: 1,
       metric: '',
       completed: false,
     })
@@ -282,7 +284,19 @@ function toViewMode(id = reportId.value) {
   router.replace({ name: 'ReportView', params: { id }, query: {} })
 }
 function goBack() {
-  router.push({ name: 'Progress' })
+  // Si venimos navegando desde progreso de otro, esto respeta el historial
+  if (window.history.length > 1) {
+    router.back()
+    return
+  }
+  // Fallback explícito
+  if (!isOwner.value && report.value?.user_id) {
+    const q = {}
+    if (route.query?.name) q.name = route.query.name
+    router.push({ name: 'Progress', params: { user: report.value.user_id }, query: q })
+  } else {
+    router.push({ name: 'Progress' })
+  }
 }
 
 /* ----------------- guardar ----------------- */

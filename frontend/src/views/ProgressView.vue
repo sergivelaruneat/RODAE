@@ -67,17 +67,14 @@
 
           <!-- Columna derecha -->
           <div class="grid grid-rows-2 gap-6">
-            <!-- Últimas rutinas (3 máx, espacio fijo, scroll si hiciera falta) -->
+            <!-- Últimas rutinas (máx 3, distintas, espacio fijo, scroll si hace falta) -->
             <div class="bg-white rounded-lg shadow p-4 flex flex-col h-[430px]">
               <h3 class="font-semibold text-lg text-gray-700 mb-2">Últimas rutinas realizadas</h3>
               <div class="flex-1 min-h-0 overflow-y-auto custom-scroll">
-                <ul
-                  v-if="Array.isArray(recentRoutinesTop3) && recentRoutinesTop3.length > 0"
-                  class="space-y-3 m-0 p-0"
-                >
+                <ul v-if="recentRoutinesTop3.length" class="space-y-3 m-0 p-0">
                   <RoutineCard
                     v-for="(rutina, idx) in recentRoutinesTop3"
-                    :key="(rutina && rutina.id) || ('rut' + idx)"
+                    :key="rutina.id ?? ('rut' + idx)"
                     :routine="rutina"
                     @select="goRoutine"
                   />
@@ -142,7 +139,7 @@
 
 <script setup>
 import { ref, computed, onMounted, watch } from 'vue'
-import { useRouter } from 'vue-router'
+import { useRouter, useRoute } from 'vue-router'
 import Navbar from '@/components/Navbar.vue'
 import RoutineCard from '@/components/RoutineCard.vue'
 import ReportCard from '@/components/ReportCard.vue'
@@ -162,11 +159,24 @@ import {
 import { getMyRoutines } from '@/services/routineService'
 
 const router = useRouter()
-const currentUser = (() => { try { return JSON.parse(localStorage.getItem('user') || 'null') } catch { return null } })()
-const nombreUsuario = computed(() => currentUser?.name || 'Mi perfil')
+const route  = useRoute()
 
-// si más adelante abres /progress/:user, aquí controlarías lectura/edición
-const showAddButton = computed(() => true)
+// usuario autenticado
+const currentUser = (() => { try { return JSON.parse(localStorage.getItem('user') || 'null') } catch { return null } })()
+
+// id del usuario cuyo progreso se está viendo (si no hay param, eres tú)
+const viewedUserId = computed(() =>
+  route.params.userId ? Number(route.params.userId) : currentUser?.id
+)
+
+// nombre para la cabecera (si viene por query desde OtherProfile, úsalo)
+const nombreUsuario = computed(() =>
+  route.query.name
+    ?? (viewedUserId.value === currentUser?.id ? (currentUser?.name || 'Mi perfil') : 'Progreso')
+)
+
+// botón “Añadir reporte” solo si es tu propio progreso
+const showAddButton = computed(() => viewedUserId.value === currentUser?.id)
 
 /* ====== calendario ====== */
 const visibleYear  = ref(new Date().getFullYear())
@@ -196,8 +206,11 @@ function dayClass(date) {
 
 const cargarCalendario = async () => {
   try {
-    const rows = await getCalendar({ year: visibleYear.value, month: visibleMonth.value })
-    // backend: [{ date: 'YYYY-MM-DD', count: int }]
+    const rows = await getCalendar({
+      year: visibleYear.value,
+      month: visibleMonth.value,
+      user_id: viewedUserId.value
+    })
     const list = Array.isArray(rows) ? rows : []
     fechasEntrenadas.value = list.map(r => r.date).filter(Boolean)
   } catch (e) {
@@ -213,43 +226,45 @@ const deportesRealizados = ref({})
 
 // Top 3 rutinas distintas
 const recentRoutinesTop3 = computed(() => {
-  const src = Array.isArray(recentRoutines.value) ? recentRoutines.value : []
-  const map = new Map()
-  for (const r of src) {
-    if (!r || r.id == null) continue
-    if (!map.has(r.id)) map.set(r.id, r)
-    if (map.size === 3) break
+  const arr = Array.isArray(recentRoutines.value) ? recentRoutines.value : []
+  const seen = new Set()
+  const uniq = []
+  for (const r of arr) {
+    const id = r?.id
+    if (id != null && !seen.has(id)) {
+      seen.add(id)
+      uniq.push(r)
+      if (uniq.length === 3) break
+    }
   }
-  return Array.from(map.values())
+  return uniq
 })
 
 const cargarRoutinesYReports = async () => {
   try {
-    // Pedimos más de 3 para poder deduplicar
-    const r1 = await getRecentRoutines({ limit: 10 })
-    recentRoutines.value = Array.isArray(r1) ? r1 : (Array.isArray(r1?.data) ? r1.data : [])
-
-    // Todos los reportes (scroll interno del bloque)
-    const r2 = await getRecentReports({ limit: 1000 })
-    recentReports.value  = Array.isArray(r2) ? r2 : (Array.isArray(r2?.data) ? r2.data : [])
+    // NOTA: estas funciones deben aceptar 2º parámetro opcional con params extra.
+    // getRecentRoutines(3, { user_id }), getRecentReports(1000, { user_id })
+    const [r1, r2] = await Promise.all([
+      getRecentRoutines(3,    { user_id: viewedUserId.value }),
+      getRecentReports(1000,  { user_id: viewedUserId.value })
+    ])
+    recentRoutines.value = Array.isArray(r1) ? r1 : (r1?.data ?? [])
+    recentReports.value  = Array.isArray(r2) ? r2 : (r2?.data ?? [])
   } catch (e) {
     console.error('No se pudo cargar rutinas/reportes recientes', e)
     recentRoutines.value = []
-    recentReports.value  = []
+    recentReports.value = []
   }
 }
 
 const cargarBreakdown = async () => {
-  const y = visibleYear.value
-  const m = visibleMonth.value
-  const from = `${y}-${String(m).padStart(2, '0')}-01`
-  const toDate = new Date(y, m, 0).getDate()
-  const to = `${y}-${String(m).padStart(2, '0')}-${String(toDate).padStart(2, '0')}`
-
   try {
-    const rows = await getSportBreakdown({ from, to })
+    // histórico (sin rango), filtrado por usuario visto
+    const rows = await getSportBreakdown({ user_id: viewedUserId.value })
     const obj = {}
-    for (const r of rows || []) obj[r.label || r.sport || 'Otro'] = r.count ?? 0
+    for (const r of rows || []) {
+      obj[r.label || r.sport || 'Otro'] = r.count ?? 0
+    }
     deportesRealizados.value = obj
   } catch (e) {
     console.error('No se pudo cargar el breakdown de deportes', e)
@@ -260,6 +275,13 @@ const cargarBreakdown = async () => {
 // recargar al cambiar mes visible
 watch([visibleYear, visibleMonth], () => {
   cargarCalendario()
+  cargarBreakdown()
+})
+
+// si cambia el usuario visto (navegación entre perfiles), recargamos todo
+watch(viewedUserId, () => {
+  cargarCalendario()
+  cargarRoutinesYReports()
   cargarBreakdown()
 })
 
@@ -312,13 +334,3 @@ onMounted(async () => {
   ])
 })
 </script>
-
-<style>
-.custom-scroll::-webkit-scrollbar { width: 8px; }
-.custom-scroll::-webkit-scrollbar-thumb { background-color: rgba(0,0,0,0.2); border-radius: 4px; }
-
-/* Evitar interacción con los días (solo navegación de mes) */
-.dp__calendar_row .dp__cell_inner {
-  pointer-events: none;
-}
-</style>

@@ -21,13 +21,14 @@ export const deleteReport = (id) =>
 export const getCalendar = (params = {}) =>
   http.get('/reports/calendar', { params }).then(r => r.data)
 
-export const getRecentRoutines = (limit = 5) =>
-  http.get('/reports/recent-routines', { params: { limit } })
+export const getRecentRoutines = (limit = 3, extra = {}) =>
+  http.get('/reports/recent-routines', { params: { limit, ...extra } })
       .then(r => r.data?.data ?? r.data)
 
-export const getRecentReports = (limit = 5) =>
-  http.get('/reports/recent', { params: { limit } })
+export const getRecentReports = (limit = 5, extra = {}) =>
+  http.get('/reports/recent', { params: { limit, ...extra } })
       .then(r => r.data?.data ?? r.data)
 
 export const getSportBreakdown = (params = {}) =>
   http.get('/reports/sport-breakdown', { params }).then(r => r.data)
+

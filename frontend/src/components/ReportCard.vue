@@ -12,9 +12,6 @@
         {{ report.routine?.sport_label || report.routine?.sport || '—' }}
       </p>
     </div>
-    <div class="text-sm text-gray-600">
-      {{ (report.items?.length ?? 0) }} ítems
-    </div>
   </li>
 </template>
 
